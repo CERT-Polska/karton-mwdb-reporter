@@ -1,0 +1,6 @@
+.mypy_cache
+.vscode
+.idea
+__pycache__
+venv
+karton.ini
