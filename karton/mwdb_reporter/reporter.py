@@ -60,7 +60,7 @@ class Reporter(Karton):
     ```
     """  # noqa
 
-    identity = "karton.reporter"
+    identity = "karton.mwdb-reporter"
     version = __version__
     filters = [
         {"type": "sample", "stage": "recognized"},
@@ -68,6 +68,17 @@ class Reporter(Karton):
         {"type": "config"},
     ]
     MAX_FILE_SIZE = 1024 * 1024 * 40
+
+    def mwdb(self) -> MWDB:
+        mwdb_config = dict(self.config.config.items("mwdb"))
+        mwdb = MWDB(
+            api_key=mwdb_config.get("api_key"),
+            api_url=mwdb_config.get("api_url", API_URL),
+            retry_on_downtime=True,
+        )
+        if not mwdb.api.api_key:
+            mwdb.login(mwdb_config["username"], mwdb_config["password"])
+        return mwdb
 
     def _tag_children_blobs(self, config: MWDBConfig) -> None:
         for item in config.config.values():
@@ -242,7 +253,7 @@ class Reporter(Karton):
         return sample
 
     def process(self) -> None:
-        mwdb = self.config.mwdb()
+        mwdb = self.mwdb()
         object_type = self.current_task.headers["type"]
         if object_type == "sample":
             object = self.process_sample(mwdb)
@@ -283,19 +294,3 @@ class Reporter(Karton):
                     "[%s %s] Adding comment: %s", object_type, object.id, repr(comment)
                 )
                 object.add_comment(comment)
-
-
-class ReporterConfig(Config):
-    def __init__(self, path: Optional[str] = None) -> None:
-        super(ReporterConfig, self).__init__(path)
-        self.mwdb_config = dict(self.config.items("mwdb"))
-
-    def mwdb(self) -> MWDB:
-        mwdb = MWDB(
-            api_key=self.mwdb_config.get("api_key"),
-            api_url=self.mwdb_config.get("api_url", API_URL),
-            retry_on_downtime=True,
-        )
-        if not mwdb.api.api_key:
-            mwdb.login(self.mwdb_config["username"], self.mwdb_config["password"])
-        return mwdb
