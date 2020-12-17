@@ -20,7 +20,7 @@ setup(
     install_requires=open("requirements.txt").read().splitlines(),
     entry_points={
         'console_scripts': [
-            'karton-mwdb-reporter=karton.mwdb_reporter:Reporter.main'
+            'karton-mwdb-reporter=karton.mwdb_reporter:MWDBReporter.main'
         ],
     },
     classifiers=[

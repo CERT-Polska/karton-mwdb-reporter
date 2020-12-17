@@ -3,6 +3,7 @@
 Uploads samples and static configs to malwaredb
 
 Author: CERT.pl
+Maintainers: psrok1, nazywam
 
 **Consumes:**
 ```

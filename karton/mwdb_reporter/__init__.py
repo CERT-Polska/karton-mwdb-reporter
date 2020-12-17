@@ -1,3 +1,3 @@
-from .reporter import Reporter
+from .mwdb_reporter import MWDBReporter
 
-__all__ = ["Reporter"]
+__all__ = ["MWDBReporter"]

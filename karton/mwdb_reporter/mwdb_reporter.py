@@ -16,7 +16,7 @@ from mwdblib.exc import ObjectNotFoundError  # type: ignore
 from .__version__ import __version__
 
 
-class Reporter(Karton):
+class MWDBReporter(Karton):
     """
     Uploads analysis artifacts to MWDB (ripped samples and static configurations).
 
@@ -133,7 +133,7 @@ class Reporter(Karton):
         except ObjectNotFoundError:
             self.log.info("[sample %s] Sample doesn't exist, uploading", dhash)
 
-            if resource.size > Reporter.MAX_FILE_SIZE:
+            if resource.size > MWDBReporter.MAX_FILE_SIZE:
                 self.log.warn("Sample is too big (%d bytes), skipping", resource.size)
                 return None
 
