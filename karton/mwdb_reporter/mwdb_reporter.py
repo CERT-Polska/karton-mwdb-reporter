@@ -1,15 +1,7 @@
-import hashlib
 from typing import Any, Dict, Optional
 
-from karton.core import Config, Karton, RemoteResource  # type: ignore
-
-from mwdblib import (  # type: ignore
-    MWDB,
-    MWDBBlob,
-    MWDBConfig,
-    MWDBFile,
-    MWDBObject,
-)
+from karton.core import Karton, RemoteResource  # type: ignore
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject  # type: ignore
 from mwdblib.api import API_URL  # type: ignore
 from mwdblib.exc import ObjectNotFoundError  # type: ignore
 
@@ -92,7 +84,10 @@ class MWDBReporter(Karton):
                 item.add_tag(tag)
 
     def _upload_file(
-        self, mwdb: MWDB, resource: RemoteResource, parent: Optional[MWDBObject] = None,
+        self,
+        mwdb: MWDB,
+        resource: RemoteResource,
+        parent: Optional[MWDBObject] = None,
     ) -> MWDBFile:
         """
         Upload file to MWDB or get from repository if already exists
