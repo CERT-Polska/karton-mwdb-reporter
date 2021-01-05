@@ -293,7 +293,3 @@ class MWDBReporter(Karton):
                     "[%s %s] Adding comment: %s", object_type, mwdb_object.id, repr(comment)
                 )
                 mwdb_object.add_comment(comment)
-
-
-if __name__ == "__main__":
-    MWDBReporter().process(Task({}))
