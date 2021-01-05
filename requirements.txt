@@ -1,2 +1,2 @@
-mwdblib==3.3.1
-karton-core==4.0.4
+mwdblib==3.4.0
+karton-core==4.0.5
