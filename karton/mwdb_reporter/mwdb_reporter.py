@@ -268,7 +268,9 @@ class MWDBReporter(Karton):
         if task.has_payload("tags"):
             for tag in task.get_payload("tags"):
                 if tag not in mwdb_object.tags:
-                    self.log.info("[%s %s] Adding tag %s", object_type, mwdb_object.id, tag)
+                    self.log.info(
+                        "[%s %s] Adding tag %s", object_type, mwdb_object.id, tag
+                    )
                     mwdb_object.add_tag(tag)
 
         # Add payload attributes
@@ -290,6 +292,9 @@ class MWDBReporter(Karton):
         if comments:
             for comment in comments:
                 self.log.info(
-                    "[%s %s] Adding comment: %s", object_type, mwdb_object.id, repr(comment)
+                    "[%s %s] Adding comment: %s",
+                    object_type,
+                    mwdb_object.id,
+                    repr(comment),
                 )
                 mwdb_object.add_comment(comment)
