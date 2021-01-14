@@ -211,7 +211,7 @@ class MWDBReporter(Karton):
                 self.log.info("[sample %s] Adding tag ripped:%s", sample.id, family)
                 sample.add_tag("ripped:" + family)
             else:
-                self.log.warning("Couldn't upload sample")
+                self.log.warning("Couldn't upload original sample")
         else:
             sample = None
 
@@ -254,7 +254,7 @@ class MWDBReporter(Karton):
     def process(self, task: Task) -> None:  # type: ignore
         mwdb = self.mwdb()
         object_type = task.headers["type"]
-        mwdb_object: Optional[MWDBObject] = None
+        mwdb_object: Optional[MWDBObject]
 
         if object_type == "sample":
             mwdb_object = self.process_sample(task, mwdb)
