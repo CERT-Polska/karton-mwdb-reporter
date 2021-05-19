@@ -13,8 +13,11 @@ exec(version_path.read_text(), version_info)
 setup(
     name="karton-mwdb-reporter",
     version=version_info["__version__"],
+    url="https://github.com/CERT-Polska/karton-mwdb-reporter/",
     description="Karton service that uploads analyzed artifacts "
                 "and metadata to MWDB Core",
+    long_description=open("README.md", "r").read(),
+    long_description_content_type="text/markdown",
     namespace_packages=["karton"],
     packages=["karton.mwdb_reporter"],
     install_requires=open("requirements.txt").read().splitlines(),
