@@ -314,18 +314,14 @@ class MWDBReporter(Karton):
         else:
             parent = None
 
-        if task.has_payload("blob"):
-            blob = self._upload_blob(
-                task=task,
-                mwdb=mwdb,
-                name=task.get_payload("name"),
-                type=task.headers["blob_type"],
-                content=task.get_payload("blob"),
-                parent=parent,
-            )
-        else:
-            blob = None
-
+        blob = self._upload_blob(
+            task=task,
+            mwdb=mwdb,
+            name=task.get_payload("name"),
+            type=task.headers["blob_type"],
+            content=task.get_payload("blob"),
+            parent=parent,
+        )
         return blob
 
     def process(self, task: Task) -> None:  # type: ignore
