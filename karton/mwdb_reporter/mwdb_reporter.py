@@ -295,12 +295,38 @@ class MWDBReporter(Karton):
 
         if task.has_payload("sample"):
             sample = self._upload_file(
-                task, mwdb, task.get_payload("sample"), parent=parent
+                task=task, mwdb=mwdb, resource=task.get_payload("sample"), parent=parent
             )
         else:
             sample = None
 
         return sample
+
+    def process_blob(self, task: Task, mwdb: MWDB) -> Optional[MWDBBlob]:
+        """
+        Processing of Blob task
+
+        :param mwdb: MWDB instance
+        :return: MWDBBlob object or None
+        """
+        if task.has_payload("parent"):
+            parent = self._upload_file(task, mwdb, task.get_payload("parent"))
+        else:
+            parent = None
+
+        if task.has_payload("blob"):
+            blob = self._upload_blob(
+                task=task,
+                mwdb=mwdb,
+                name=task.get_payload("name"),
+                type=task.headers["blob_type"],
+                content=task.get_payload("blob"),
+                parent=parent,
+            )
+        else:
+            blob = None
+
+        return blob
 
     def process(self, task: Task) -> None:  # type: ignore
         mwdb = self.mwdb()
