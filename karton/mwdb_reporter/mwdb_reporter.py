@@ -49,6 +49,23 @@ class MWDBReporter(Karton):
         }
     }
     ```
+
+    Expected incoming task structure for blobs:
+    ```
+    {
+        "headers": {
+            "type": "blob",
+            "blob_type": <blob type>
+        },
+        "payload": {
+            "content": String with blob contents
+            "parent": optional, Resource with parent sample contents
+            "tags": optional, list of additional tags to be added
+            "attributes": optional, dict with attributes (metakeys) to be added
+            "comments": optional, list of comments to be added
+        }
+    }
+    ```
     """  # noqa
 
     identity = "karton.mwdb-reporter"
@@ -57,6 +74,7 @@ class MWDBReporter(Karton):
         {"type": "sample", "stage": "recognized"},
         {"type": "sample", "stage": "analyzed"},
         {"type": "config"},
+        {"type": "blob"},
     ]
     MAX_FILE_SIZE = 1024 * 1024 * 40
 
@@ -185,6 +203,39 @@ class MWDBReporter(Karton):
         self.log.info("[config %s] Adding metakey karton: %s", dhash, task.root_uid)
         return config_object
 
+    def _upload_blob(
+        self,
+        task: Task,
+        mwdb: MWDB,
+        name: str,
+        type: str,
+        content: str,
+        parent: Optional[MWDBObject] = None,
+    ) -> MWDBBlob:
+        """
+        Upload blob to MWDB ensuring that 'karton' metakey is set.
+
+        :param mwdb: MWDB instance
+        :param name: blob name
+        :param type: blob type
+        :param content: blob content
+        :param parent: MWDBObject with config parent
+        :return: MWDBFile instance
+        """
+        blob_object = mwdb.upload_blob(
+            name=name,
+            type=type,
+            content=content,
+            parent=parent,
+            metakeys={"karton": task.root_uid},
+        )
+        dhash = blob_object.id
+        self.log.info("[blob %s] Uploaded %s blob", dhash, name)
+        if parent:
+            self.log.info("[config %s] Adding parent: %s", dhash, parent.id)
+        self.log.info("[config %s] Adding metakey karton: %s", dhash, task.root_uid)
+        return blob_object
+
     def process_config(self, task: Task, mwdb: MWDB) -> MWDBConfig:
         """
         Processing of Config task
@@ -258,8 +309,12 @@ class MWDBReporter(Karton):
 
         if object_type == "sample":
             mwdb_object = self.process_sample(task, mwdb)
-        else:
+        elif object_type == "config":
             mwdb_object = self.process_config(task, mwdb)
+        elif object_type == "blob":
+            mwdb_object = self.process_blob(task, mwdb)
+        else:
+            raise Exception("Unsupported object type")
 
         if not mwdb_object:
             return

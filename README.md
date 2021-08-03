@@ -1,6 +1,6 @@
 # Reporter karton service
 
-Uploads samples and static configs to malwaredb
+Uploads samples, static configs and blobs to malwaredb
 
 **Author**: CERT.pl
 
@@ -14,6 +14,9 @@ Uploads samples and static configs to malwaredb
 },
 {
     "type": "config"
+},
+{
+    "type": "blob"
 }
 ```
 
