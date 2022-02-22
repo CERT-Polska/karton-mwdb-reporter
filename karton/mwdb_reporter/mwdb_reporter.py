@@ -212,7 +212,7 @@ class MWDBReporter(Karton):
 
         :param mwdb_object: MWDBObject instance
         :param key: Attribute name
-        :param value: Attribute value, must be JSONable
+        :param value: Attribute value, must be JSON-serializable
         """
 
         if value not in mwdb_object.attributes.get(key, []):
