@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional, cast
 
 from karton.core import Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
+from mwdblib.api.options import APIClientOptions
 
 from .__version__ import __version__
 
@@ -30,7 +31,7 @@ class MWDBReporter(Karton):
     }
     ```
 
-    Samples are decorated with tag: `kind:platform:extension` or `misc:kind` if platform is missing
+    Samples are decorated with tag: ``kind:platform:extension`` or ``misc:kind`` if platform is missing
 
     Expected incoming task structure for configs:
     ```
@@ -63,7 +64,7 @@ class MWDBReporter(Karton):
         mwdb_config = dict(self.config.config.items("mwdb"))
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
-            api_url=mwdb_config.get("api_url"),
+            api_url=mwdb_config.get("api_url", APIClientOptions.api_url),
             retry_on_downtime=True,
         )
         if not mwdb.api.auth_token:
@@ -187,8 +188,8 @@ class MWDBReporter(Karton):
     def _add_metakey(self, mwdb_object: MWDBObject, key: str, value: str) -> None:
         """
         Add a metakey to passed object.
-        `add_metakey` is deprecated but we use it here to keep compatibility with
-        MWDB instances that do not yet expose the `attribute` endpoint
+        ``add_metakey`` is deprecated but we use it here to keep compatibility with
+        MWDB instances that do not yet expose the "attribute" endpoint
 
         :param mwdb_object: MWDBObject instance
         :param key: Metakey name
@@ -205,15 +206,13 @@ class MWDBReporter(Karton):
             )
             mwdb_object.add_metakey(key, value)
 
-    def _add_attribute(
-        self, mwdb_object: MWDBObject, key: str, value: Dict[str, Any]
-    ) -> None:
+    def _add_attribute(self, mwdb_object: MWDBObject, key: str, value: Any) -> None:
         """
         Add a attribute to passed object.
 
         :param mwdb_object: MWDBObject instance
         :param key: Attribute name
-        :param value: Attribute value
+        :param value: Attribute value, must be JSONable
         """
 
         if value not in mwdb_object.attributes.get(key, []):
