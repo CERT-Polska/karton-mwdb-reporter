@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional, cast
 
 from karton.core import Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
-from mwdblib.api import API_URL
 
 from .__version__ import __version__
 
@@ -64,10 +63,10 @@ class MWDBReporter(Karton):
         mwdb_config = dict(self.config.config.items("mwdb"))
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
-            api_url=mwdb_config.get("api_url", API_URL),
+            api_url=mwdb_config.get("api_url"),
             retry_on_downtime=True,
         )
-        if not mwdb.api.api_key:
+        if not mwdb.api.auth_token:
             mwdb.login(mwdb_config["username"], mwdb_config["password"])
         return mwdb
 
@@ -106,7 +105,7 @@ class MWDBReporter(Karton):
 
         self.log.info("[sample %s] Querying for sample", dhash)
 
-        file = mwdb.query_file(dhash, raise_not_found=False)
+        file = mwdb.query_file(dhash, raise_not_found=False)  # type: ignore
         if file is not None:
             self.log.info("[sample %s] Sample already exists", dhash)
 
@@ -199,7 +198,7 @@ class MWDBReporter(Karton):
         if value not in mwdb_object.metakeys.get(key, []):
             self.log.info(
                 "[%s %s] Adding metakey %s: %s",
-                mwdb_object.type,
+                mwdb_object.TYPE,
                 mwdb_object.id,
                 key,
                 value,
@@ -220,7 +219,7 @@ class MWDBReporter(Karton):
         if value not in mwdb_object.attributes.get(key, []):
             self.log.info(
                 "[%s %s] Adding attribute %s: %s",
-                mwdb_object.type,
+                mwdb_object.TYPE,
                 mwdb_object.id,
                 key,
                 value,
@@ -311,7 +310,7 @@ class MWDBReporter(Karton):
             for tag in task.get_payload("tags"):
                 if tag not in mwdb_object.tags:
                     self.log.info(
-                        "[%s %s] Adding tag %s", mwdb_object.type, mwdb_object.id, tag
+                        "[%s %s] Adding tag %s", mwdb_object.TYPE, mwdb_object.id, tag
                     )
                     mwdb_object.add_tag(tag)
 
@@ -333,7 +332,7 @@ class MWDBReporter(Karton):
             for comment in comments:
                 self.log.info(
                     "[%s %s] Adding comment: %s",
-                    mwdb_object.type,
+                    mwdb_object.TYPE,
                     mwdb_object.id,
                     repr(comment),
                 )
