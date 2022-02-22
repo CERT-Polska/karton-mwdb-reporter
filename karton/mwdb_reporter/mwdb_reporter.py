@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, cast
 
 from karton.core import Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
-from mwdblib.api import API_URL
+from mwdblib.api.options import APIClientOptions
 
 from .__version__ import __version__
 
@@ -31,7 +31,7 @@ class MWDBReporter(Karton):
     }
     ```
 
-    Samples are decorated with tag: `kind:platform:extension` or `misc:kind` if platform is missing
+    Samples are decorated with tag: ``kind:platform:extension`` or ``misc:kind`` if platform is missing
 
     Expected incoming task structure for configs:
     ```
@@ -64,10 +64,10 @@ class MWDBReporter(Karton):
         mwdb_config = dict(self.config.config.items("mwdb"))
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
-            api_url=mwdb_config.get("api_url", API_URL),
+            api_url=mwdb_config.get("api_url", APIClientOptions.api_url),
             retry_on_downtime=True,
         )
-        if not mwdb.api.api_key:
+        if not mwdb.api.auth_token:
             mwdb.login(mwdb_config["username"], mwdb_config["password"])
         return mwdb
 
@@ -106,7 +106,7 @@ class MWDBReporter(Karton):
 
         self.log.info("[sample %s] Querying for sample", dhash)
 
-        file = mwdb.query_file(dhash, raise_not_found=False)
+        file = mwdb.query_file(dhash, raise_not_found=False)  # type: ignore
         if file is not None:
             self.log.info("[sample %s] Sample already exists", dhash)
 
@@ -184,6 +184,46 @@ class MWDBReporter(Karton):
         self._tag_children_blobs(config=config_object)
         self.log.info("[config %s] Adding metakey karton: %s", dhash, task.root_uid)
         return config_object
+
+    def _add_metakey(self, mwdb_object: MWDBObject, key: str, value: str) -> None:
+        """
+        Add a metakey to passed object.
+        ``add_metakey`` is deprecated but we use it here to keep compatibility with
+        MWDB instances that do not yet expose the "attribute" endpoint
+
+        :param mwdb_object: MWDBObject instance
+        :param key: Metakey name
+        :param value: Metakey value
+        """
+
+        if value not in mwdb_object.metakeys.get(key, []):
+            self.log.info(
+                "[%s %s] Adding metakey %s: %s",
+                mwdb_object.TYPE,
+                mwdb_object.id,
+                key,
+                value,
+            )
+            mwdb_object.add_metakey(key, value)
+
+    def _add_attribute(self, mwdb_object: MWDBObject, key: str, value: Any) -> None:
+        """
+        Add a attribute to passed object.
+
+        :param mwdb_object: MWDBObject instance
+        :param key: Attribute name
+        :param value: Attribute value, must be JSON-serializable
+        """
+
+        if value not in mwdb_object.attributes.get(key, []):
+            self.log.info(
+                "[%s %s] Adding attribute %s: %s",
+                mwdb_object.TYPE,
+                mwdb_object.id,
+                key,
+                value,
+            )
+            mwdb_object.add_attribute(key, value)
 
     def process_config(self, task: Task, mwdb: MWDB) -> MWDBConfig:
         """
@@ -269,7 +309,7 @@ class MWDBReporter(Karton):
             for tag in task.get_payload("tags"):
                 if tag not in mwdb_object.tags:
                     self.log.info(
-                        "[%s %s] Adding tag %s", object_type, mwdb_object.id, tag
+                        "[%s %s] Adding tag %s", mwdb_object.TYPE, mwdb_object.id, tag
                     )
                     mwdb_object.add_tag(tag)
 
@@ -277,15 +317,13 @@ class MWDBReporter(Karton):
         if task.has_payload("attributes"):
             for key, values in task.get_payload("attributes").items():
                 for value in values:
-                    if value not in mwdb_object.metakeys.get(key, []):
-                        self.log.info(
-                            "[%s %s] Adding metakey %s: %s",
-                            object_type,
-                            mwdb_object.id,
-                            key,
-                            value,
+                    if type(value) is str:
+                        # this is kept for compatibility with older mwdb-core instances
+                        self._add_metakey(mwdb_object=mwdb_object, key=key, value=value)
+                    else:
+                        self._add_attribute(
+                            mwdb_object=mwdb_object, key=key, value=value
                         )
-                        mwdb_object.add_metakey(key, value)
 
         # Add payload comments
         comments = task.get_payload("comments") or task.get_payload("additional_info")
@@ -293,7 +331,7 @@ class MWDBReporter(Karton):
             for comment in comments:
                 self.log.info(
                     "[%s %s] Adding comment: %s",
-                    object_type,
+                    mwdb_object.TYPE,
                     mwdb_object.id,
                     repr(comment),
                 )
