@@ -206,7 +206,9 @@ class MWDBReporter(Karton):
             )
             mwdb_object.add_metakey(key, value)
 
-    def _add_attribute(self, mwdb_object: MWDBObject, key: str, value: Dict[str, Any]) -> None:
+    def _add_attribute(
+        self, mwdb_object: MWDBObject, key: str, value: Dict[str, Any]
+    ) -> None:
         """
         Add a attribute to passed object.
 
@@ -321,7 +323,9 @@ class MWDBReporter(Karton):
                         # this is kept for compatibility with older mwdb-core instances
                         self._add_metakey(mwdb_object=mwdb_object, key=key, value=value)
                     else:
-                        self._add_attribute(mwdb_object=mwdb_object, key=key, value=value)
+                        self._add_attribute(
+                            mwdb_object=mwdb_object, key=key, value=value
+                        )
 
         # Add payload comments
         comments = task.get_payload("comments") or task.get_payload("additional_info")
