@@ -9,7 +9,7 @@ from .__version__ import __version__
 
 class MWDBReporter(Karton):
     """
-    Uploads analysis artifacts to MWDB (ripped samples and static configurations).
+    Uploads analysis artifacts to MWDB.
 
     Expected incoming task structure for samples:
     ```
@@ -24,6 +24,7 @@ class MWDBReporter(Karton):
         "payload": {
             "sample": Resource with sample contents
             "parent": optional, Resource with parent sample contents
+                      or identifier (hash) of parent object
             "tags": optional, list of additional tags to be added
             "attributes": optional, dict with attributes to be added
             "comments": optional, list of comments to be added (legacy alias: "additional_info")
@@ -46,6 +47,25 @@ class MWDBReporter(Karton):
             "tags": optional, list of additional tags to be added
             "attributes": optional, dict with attributes to be added
             "comments": optional, list of comments to be added (legacy alias: "additional_info")
+        }
+    }
+    ```
+
+    Expected incoming task structure for blobs:
+    ```
+    {
+        "headers": {
+            "type": "blob",
+            "blob_type": <blob type>
+        },
+        "payload": {
+            "name": String with blob name
+            "content": String with blob contents
+            "parent": optional, Resource with parent sample contents
+                      or identifier (hash) of parent object
+            "tags": optional, list of additional tags to be added
+            "attributes": optional, dict with attributes (metakeys) to be added
+            "comments": optional, list of comments to be added
         }
     }
     ```
@@ -86,6 +106,13 @@ class MWDBReporter(Karton):
                     "[%s %s] Adding tag %s", mwdb_object.TYPE, mwdb_object.id, tag
                 )
                 mwdb_object.add_tag(tag)
+            else:
+                self.log.info(
+                    "[%s %s] Already tagged as %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    tag,
+                )
 
     def _add_attributes(
         self, mwdb_object: MWDBObject, attributes: Dict[str, List[Any]]
@@ -115,11 +142,22 @@ class MWDBReporter(Karton):
                 mwdb_object.add_comment(comment)
 
     def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]):
-        if parent and all(attached.id != parent.id for attached in mwdb_object.parents):
-            self.log.info(
-                "[%s %s] Adding parent: %s", mwdb_object.TYPE, mwdb_object.id, parent.id
-            )
-            parent.add_child(parent)
+        if parent:
+            if all(attached.id != parent.id for attached in mwdb_object.parents):
+                self.log.info(
+                    "[%s %s] Adding parent: %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    parent.id,
+                )
+                parent.add_child(parent)
+            else:
+                self.log.info(
+                    "[%s %s] Parent already added: %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    parent.id,
+                )
 
     def _upload_object(
         self,
@@ -145,6 +183,7 @@ class MWDBReporter(Karton):
         :param attributes: Set of attributes to add
         :param comments: List of comments to add
         :param karton_id: Karton root task identifier
+        :return: Tuple (is new, uploaded object)
         """
         tags = tags or []
         attributes = attributes or {}
@@ -155,6 +194,8 @@ class MWDBReporter(Karton):
         else:
             existing_object = None
 
+        metadata: List[str] = []
+
         if not existing_object:
             if self.mwdb.api.supports_version("2.6.0"):
                 mwdb_object = object_uploader(
@@ -164,20 +205,54 @@ class MWDBReporter(Karton):
                     attributes=attributes,
                     karton_id=karton_id
                 )
+
+                if parent:
+                    metadata.append("parent: " + parent.id)
+                if tags:
+                    metadata.append("tags: " + ",".join(tags))
+                if attributes:
+                    metadata.append("attributes: " + ",".join(attributes.keys()))
+                if not metadata:
+                    metadata_info = "no metadata"
+                else:
+                    metadata_info = "including " + "; ".join(metadata)
+                self.log.info(
+                    "[%s %s] Uploaded object %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    metadata_info,
+                )
             else:
                 # 2.0.0+ Backwards compatible version
                 mwdb_object = object_uploader(
                     **object_params, parent=parent, metakeys={"karton": karton_id}
                 )
+                if parent:
+                    metadata.append("parent: " + parent.id)
+                if not metadata:
+                    metadata_info = "no metadata"
+                else:
+                    metadata_info = "including " + "; ".join(metadata)
+                self.log.info(
+                    "[%s %s] Uploaded object %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    metadata_info,
+                )
                 self._add_tags(mwdb_object, tags)
                 self._add_attributes(mwdb_object, attributes)
+            self._add_comments(mwdb_object, comments)
         else:
             mwdb_object = existing_object
             self._add_parent(mwdb_object, parent)
             self._add_tags(mwdb_object, tags)
             self._add_attributes(mwdb_object, attributes)
-        # Comments are added always
-        self._add_comments(mwdb_object, comments)
+            self._add_comments(mwdb_object, comments)
+            self.log.info(
+                "[%s %s] Added metadata to existing object",
+                mwdb_object.TYPE,
+                mwdb_object.id,
+            )
         return not existing_object, mwdb_object
 
     def _upload_file(
@@ -191,7 +266,15 @@ class MWDBReporter(Karton):
     ) -> Tuple[bool, MWDBObject]:
         """
         Upload file to MWDB or get from repository if already exists
-        ensuring that metadata are set
+        ensuring that all provided metadata are set
+
+        :param task: Related task
+        :param resource: Resource with file contents
+        :param parent: Parent object that needs to be attached to object
+        :param tags: List of tags to add
+        :param attributes: Set of attributes to add
+        :param comments: List of comments to add
+        :return: Tuple (is new, uploaded object)
         """
         file_id = resource.sha256
 
@@ -203,7 +286,8 @@ class MWDBReporter(Karton):
             parent = None
 
         def file_getter():
-            return
+            self.log.info("[sample %s] Querying for object", file_id)
+            return self.mwdb.query_file(file_id, raise_not_found=False)
 
         return self._upload_object(
             object_getter=file_getter,
@@ -228,7 +312,17 @@ class MWDBReporter(Karton):
         comments: Optional[List[str]] = None,
     ) -> Tuple[bool, MWDBObject]:
         """
-        Upload config to MWDB ensuring that all metadata are set.
+        Upload config to MWDB ensuring that all provided metadata are set.
+
+        :param task: Related task
+        :param family: Malware family
+        :param config_type: Configuration type (usually 'static')
+        :param config: Configuration contents
+        :param parent: Parent object that needs to be attached to object
+        :param tags: List of tags to add
+        :param attributes: Set of attributes to add
+        :param comments: List of comments to add
+        :return: Tuple (is new, uploaded object)
         """
         return self._upload_object(
             object_getter=None,
@@ -257,7 +351,17 @@ class MWDBReporter(Karton):
         comments: Optional[List[str]] = None,
     ) -> Tuple[bool, MWDBObject]:
         """
-        Upload blob to MWDB ensuring that all metadata are set.
+        Upload blob to MWDB ensuring that all provided metadata are set.
+
+        :param task: Related task
+        :param blob_name: Blob name
+        :param blob_type: Blob type
+        :param content: Blob content
+        :param parent: Parent object that needs to be attached to object
+        :param tags: List of tags to add
+        :param attributes: Set of attributes to add
+        :param comments: List of comments to add
+        :return: Tuple (is new, uploaded object)
         """
         return self._upload_object(
             object_getter=None,
@@ -275,17 +379,20 @@ class MWDBReporter(Karton):
         )
 
     def _tag_children_blobs(self, config: MWDBConfig) -> None:
+        """
+        Tags embedded blobs with family tag
+        """
         for item in config.config.values():
             if type(item) is MWDBBlob:
                 tag = config.family
                 self.log.info(
-                    "[blob %s] adding family tag '%s' inherited from parent sample",
+                    "[blob %s] Adding family tag '%s' inherited from parent sample",
                     item.id,
                     tag,
                 )
                 item.add_tag(tag)
 
-    def process_sample(self, task: Task):
+    def process_sample(self, task: Task) -> None:
         parent_payload = task.get_payload("parent")
         parent: Optional[MWDBObject]
 
@@ -311,7 +418,7 @@ class MWDBReporter(Karton):
             or task.get_payload("additional_info", []),
         )
 
-    def process_config(self, task: Task):
+    def process_config(self, task: Task) -> None:
         config_data = task.get_payload("config")
         family = (
             task.headers["family"]
@@ -321,7 +428,7 @@ class MWDBReporter(Karton):
         config_type = task.headers.get("config_type", "static")
 
         if "store-in-gridfs" in config_data:
-            raise Exception(
+            raise RuntimeError(
                 "Found a 'store-in-gridfs' item inside a config from family: %s", family
             )
 
@@ -353,7 +460,7 @@ class MWDBReporter(Karton):
         if not is_new:
             self._tag_children_blobs(cast(MWDBConfig, config))
 
-    def process_blob(self, task: Task):
+    def process_blob(self, task: Task) -> None:
         parent_payload = task.get_payload("parent")
         parent: Optional[MWDBObject] = None
         if isinstance(parent_payload, RemoteResource):
