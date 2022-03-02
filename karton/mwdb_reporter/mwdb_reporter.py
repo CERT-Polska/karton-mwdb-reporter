@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
-from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBObject
 from mwdblib.api.options import APIClientOptions
 
 from .__version__ import __version__
@@ -87,7 +87,9 @@ class MWDBReporter(Karton):
                 )
                 mwdb_object.add_tag(tag)
 
-    def _add_attributes(self, mwdb_object: MWDBObject, attributes: Dict[str, List[Any]]):
+    def _add_attributes(
+        self, mwdb_object: MWDBObject, attributes: Dict[str, List[Any]]
+    ):
         # Add attributes
         for key, values in attributes.items():
             for value in values:
@@ -114,7 +116,9 @@ class MWDBReporter(Karton):
 
     def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]):
         if parent and all(attached.id != parent.id for attached in mwdb_object.parents):
-            self.log.info("[%s %s] Adding parent: %s", mwdb_object.TYPE, mwdb_object.id, parent.id)
+            self.log.info(
+                "[%s %s] Adding parent: %s", mwdb_object.TYPE, mwdb_object.id, parent.id
+            )
             parent.add_child(parent)
 
     def _upload_object(
@@ -142,17 +146,16 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :param karton_id: Karton root task identifier
         """
-        tags = tags and []
-        attributes = attributes and {}
-        comments = comments and []
+        tags = tags or []
+        attributes = attributes or {}
+        comments = comments or []
 
         if object_getter:
-            mwdb_object = object_getter()
+            existing_object = object_getter()
         else:
-            mwdb_object = None
-        is_new = not mwdb_object
+            existing_object = None
 
-        if is_new:
+        if not existing_object:
             if self.mwdb.api.supports_version("2.6.0"):
                 mwdb_object = object_uploader(
                     **object_params,
@@ -164,19 +167,18 @@ class MWDBReporter(Karton):
             else:
                 # 2.0.0+ Backwards compatible version
                 mwdb_object = object_uploader(
-                    **object_params,
-                    parent=parent,
-                    metakeys={"karton": karton_id}
+                    **object_params, parent=parent, metakeys={"karton": karton_id}
                 )
                 self._add_tags(mwdb_object, tags)
                 self._add_attributes(mwdb_object, attributes)
         else:
+            mwdb_object = existing_object
             self._add_parent(mwdb_object, parent)
             self._add_tags(mwdb_object, tags)
             self._add_attributes(mwdb_object, attributes)
         # Comments are added always
         self._add_comments(mwdb_object, comments)
-        return is_new, mwdb_object
+        return not existing_object, mwdb_object
 
     def _upload_file(
         self,
@@ -192,23 +194,26 @@ class MWDBReporter(Karton):
         ensuring that metadata are set
         """
         file_id = resource.sha256
+
+        if not file_id:
+            raise RuntimeError("Missing 'sha256' of file")
+
         # Avoid circular references (e.g. ripped from original sample)
         if parent and parent.id == file_id:
             parent = None
 
-        object_getter = lambda: self.mwdb.query_file(file_id, raise_not_found=False)
+        def file_getter():
+            return
+
         return self._upload_object(
-            object_getter=object_getter,
+            object_getter=file_getter,
             object_uploader=self.mwdb.upload_file,
-            object_params=dict(
-                name=resource.name,
-                content=resource.content
-            ),
+            object_params=dict(name=resource.name, content=resource.content),
             parent=parent,
             tags=tags,
             attributes=attributes,
             comments=comments,
-            karton_id=task.root_uid
+            karton_id=task.root_uid,
         )
 
     def _upload_config(
@@ -237,7 +242,7 @@ class MWDBReporter(Karton):
             tags=tags,
             attributes=attributes,
             comments=comments,
-            karton_id=task.root_uid
+            karton_id=task.root_uid,
         )
 
     def _upload_blob(
@@ -266,7 +271,7 @@ class MWDBReporter(Karton):
             tags=tags,
             attributes=attributes,
             comments=comments,
-            karton_id=task.root_uid
+            karton_id=task.root_uid,
         )
 
     def _tag_children_blobs(self, config: MWDBConfig) -> None:
@@ -282,6 +287,8 @@ class MWDBReporter(Karton):
 
     def process_sample(self, task: Task):
         parent_payload = task.get_payload("parent")
+        parent: Optional[MWDBObject]
+
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
             _, parent = self._upload_file(
@@ -300,7 +307,8 @@ class MWDBReporter(Karton):
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
-            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
+            comments=task.get_payload("comments", [])
+            or task.get_payload("additional_info", []),
         )
 
     def process_config(self, task: Task):
@@ -318,25 +326,18 @@ class MWDBReporter(Karton):
             )
 
         # Upload original sample
+        sample: Optional[MWDBObject] = None
         if task.has_payload("sample"):
             _, sample = self._upload_file(
-                task,
-                task.get_payload("sample"),
-                tags=["ripped:" + family]
+                task, task.get_payload("sample"), tags=["ripped:" + family]
             )
-        else:
-            sample = None
 
         # Upload dump that contains recognized config information
+        parent: Optional[MWDBObject] = None
         if task.has_payload("parent"):
             _, parent = self._upload_file(
-                task,
-                task.get_payload("parent"),
-                parent=sample,
-                tags=[family]
+                task, task.get_payload("parent"), parent=sample, tags=[family]
             )
-        else:
-            parent = None
 
         is_new, config = self._upload_config(
             task,
@@ -346,13 +347,15 @@ class MWDBReporter(Karton):
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
-            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
+            comments=task.get_payload("comments", [])
+            or task.get_payload("additional_info", []),
         )
         if not is_new:
             self._tag_children_blobs(cast(MWDBConfig, config))
 
     def process_blob(self, task: Task):
         parent_payload = task.get_payload("parent")
+        parent: Optional[MWDBObject] = None
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
             _, parent = self._upload_file(
@@ -362,8 +365,6 @@ class MWDBReporter(Karton):
         elif isinstance(parent_payload, str):
             # Query parent object hash
             parent = self.mwdb.query(parent_payload, raise_not_found=False)
-        else:
-            parent = None
 
         self._upload_blob(
             task,
@@ -373,7 +374,8 @@ class MWDBReporter(Karton):
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
-            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
+            comments=task.get_payload("comments", [])
+            or task.get_payload("additional_info", []),
         )
 
     def process(self, task: Task) -> None:  # type: ignore
