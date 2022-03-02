@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
@@ -25,7 +25,7 @@ class MWDBReporter(Karton):
             "sample": Resource with sample contents
             "parent": optional, Resource with parent sample contents
             "tags": optional, list of additional tags to be added
-            "attributes": optional, dict with attributes (metakeys) to be added
+            "attributes": optional, dict with attributes to be added
             "comments": optional, list of comments to be added (legacy alias: "additional_info")
         }
     }
@@ -44,7 +44,7 @@ class MWDBReporter(Karton):
             "sample": Resource with **original** sample contents
             "parent": optional, Resource with **unpacked** sample/dump contents
             "tags": optional, list of additional tags to be added
-            "attributes": optional, dict with attributes (metakeys) to be added
+            "attributes": optional, dict with attributes to be added
             "comments": optional, list of comments to be added (legacy alias: "additional_info")
         }
     }
@@ -57,10 +57,11 @@ class MWDBReporter(Karton):
         {"type": "sample", "stage": "recognized"},
         {"type": "sample", "stage": "analyzed"},
         {"type": "config"},
+        {"type": "blob"},
     ]
     MAX_FILE_SIZE = 1024 * 1024 * 40
 
-    def mwdb(self) -> MWDB:
+    def _get_mwdb(self) -> MWDB:
         mwdb_config = dict(self.config.config.items("mwdb"))
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
@@ -70,6 +71,203 @@ class MWDBReporter(Karton):
         if not mwdb.api.auth_token:
             mwdb.login(mwdb_config["username"], mwdb_config["password"])
         return mwdb
+
+    @property
+    def mwdb(self) -> MWDB:
+        if not hasattr(self, "_mwdb"):
+            setattr(self, "_mwdb", self._get_mwdb())
+        return getattr(self, "_mwdb")
+
+    def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]):
+        # Upload tags and attributes via subsequent requests
+        for tag in tags:
+            if tag not in mwdb_object.tags:
+                self.log.info(
+                    "[%s %s] Adding tag %s", mwdb_object.TYPE, mwdb_object.id, tag
+                )
+                mwdb_object.add_tag(tag)
+
+    def _add_attributes(self, mwdb_object: MWDBObject, attributes: Dict[str, List[Any]]):
+        # Add attributes
+        for key, values in attributes.items():
+            for value in values:
+                self.log.info(
+                    "[%s %s] Adding attribute %s: %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    key,
+                    value,
+                )
+                mwdb_object.add_attribute(key, value)
+
+    def _add_comments(self, mwdb_object: MWDBObject, comments: List[str]):
+        # Add comments
+        for comment in comments:
+            if comment not in mwdb_object.comments:
+                self.log.info(
+                    "[%s %s] Adding comment: %s",
+                    mwdb_object.TYPE,
+                    mwdb_object.id,
+                    repr(comment),
+                )
+                mwdb_object.add_comment(comment)
+
+    def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]):
+        if parent and all(attached.id != parent.id for attached in mwdb_object.parents):
+            self.log.info("[%s %s] Adding parent: %s", mwdb_object.TYPE, mwdb_object.id, parent.id)
+            parent.add_child(parent)
+
+    def _upload_object(
+        self,
+        object_getter: Optional[Callable[[], Optional[MWDBObject]]],
+        object_uploader: Callable,
+        object_params: Dict[str, Any],
+        parent: Optional[MWDBObject],
+        tags: Optional[List[str]],
+        attributes: Optional[Dict[str, List[Any]]],
+        comments: Optional[List[str]],
+        karton_id: str,
+    ) -> Tuple[bool, MWDBObject]:
+        """
+        Generic object uploader that submits additional metadata along with the object.
+        Check MWDB Core version to submit them using the most efficient way that depends
+        on currently supported API.
+
+        :param object_getter: Object getter that returns object or None if doesn't exist
+        :param object_uploader: Object uploader that uploads object to MWDB
+        :param object_params: Parameters specific for object type
+        :param parent: Parent object that needs to be attached to object
+        :param tags: List of tags to add
+        :param attributes: Set of attributes to add
+        :param comments: List of comments to add
+        :param karton_id: Karton root task identifier
+        """
+        tags = tags and []
+        attributes = attributes and {}
+        comments = comments and []
+
+        if object_getter:
+            mwdb_object = object_getter()
+        else:
+            mwdb_object = None
+        is_new = not mwdb_object
+
+        if is_new:
+            if self.mwdb.api.supports_version("2.6.0"):
+                mwdb_object = object_uploader(
+                    **object_params,
+                    parent=parent,
+                    tags=tags,
+                    attributes=attributes,
+                    karton_id=karton_id
+                )
+            else:
+                # 2.0.0+ Backwards compatible version
+                mwdb_object = object_uploader(
+                    **object_params,
+                    parent=parent,
+                    metakeys={"karton": karton_id}
+                )
+                self._add_tags(mwdb_object, tags)
+                self._add_attributes(mwdb_object, attributes)
+        else:
+            self._add_parent(mwdb_object, parent)
+            self._add_tags(mwdb_object, tags)
+            self._add_attributes(mwdb_object, attributes)
+        # Comments are added always
+        self._add_comments(mwdb_object, comments)
+        return is_new, mwdb_object
+
+    def _upload_file(
+        self,
+        task: Task,
+        resource: RemoteResource,
+        parent: Optional[MWDBObject] = None,
+        tags: Optional[List[str]] = None,
+        attributes: Optional[Dict[str, List[Any]]] = None,
+        comments: Optional[List[str]] = None,
+    ) -> Tuple[bool, MWDBObject]:
+        """
+        Upload file to MWDB or get from repository if already exists
+        ensuring that metadata are set
+        """
+        file_id = resource.sha256
+        # Avoid circular references (e.g. ripped from original sample)
+        if parent and parent.id == file_id:
+            parent = None
+
+        object_getter = lambda: self.mwdb.query_file(file_id, raise_not_found=False)
+        return self._upload_object(
+            object_getter=object_getter,
+            object_uploader=self.mwdb.upload_file,
+            object_params=dict(
+                name=resource.name,
+                content=resource.content
+            ),
+            parent=parent,
+            tags=tags,
+            attributes=attributes,
+            comments=comments,
+            karton_id=task.root_uid
+        )
+
+    def _upload_config(
+        self,
+        task: Task,
+        family: str,
+        config_type: str,
+        config: Dict[str, Any],
+        parent: Optional[MWDBObject] = None,
+        tags: Optional[List[str]] = None,
+        attributes: Optional[Dict[str, List[Any]]] = None,
+        comments: Optional[List[str]] = None,
+    ) -> Tuple[bool, MWDBObject]:
+        """
+        Upload config to MWDB ensuring that all metadata are set.
+        """
+        return self._upload_object(
+            object_getter=None,
+            object_uploader=self.mwdb.upload_config,
+            object_params=dict(
+                family=family,
+                cfg=config,
+                config_type=config_type,
+            ),
+            parent=parent,
+            tags=tags,
+            attributes=attributes,
+            comments=comments,
+            karton_id=task.root_uid
+        )
+
+    def _upload_blob(
+        self,
+        task,
+        blob_name,
+        blob_type,
+        content,
+        parent: Optional[MWDBObject] = None,
+        tags: Optional[List[str]] = None,
+        attributes: Optional[Dict[str, List[Any]]] = None,
+        comments: Optional[List[str]] = None,
+    ) -> Tuple[bool, MWDBObject]:
+        """
+        Upload blob to MWDB ensuring that all metadata are set.
+        """
+        return self._upload_object(
+            object_getter=None,
+            object_uploader=self.mwdb.upload_blob,
+            object_params=dict(
+                name=blob_name,
+                type=blob_type,
+                content=content,
+            ),
+            parent=parent,
+            tags=tags,
+            attributes=attributes,
+            comments=comments,
+            karton_id=task.root_uid
+        )
 
     def _tag_children_blobs(self, config: MWDBConfig) -> None:
         for item in config.config.values():
@@ -82,257 +280,111 @@ class MWDBReporter(Karton):
                 )
                 item.add_tag(tag)
 
-    def _upload_file(
-        self,
-        task: Task,
-        mwdb: MWDB,
-        resource: RemoteResource,
-        parent: Optional[MWDBObject] = None,
-    ) -> Optional[MWDBFile]:
-        """
-        Upload file to MWDB or get from repository if already exists
-        ensuring that 'karton' metakey is set.
-
-        :param mwdb: MWDB instance
-        :param resource: Karton resource containing the file contents
-        :param parent: MWDBObject with sample parent
-        :return: MWDBFile instance
-        """
-        dhash = resource.sha256
-
-        # Avoid circular references (e.g. ripped from original sample)
-        if parent and parent.id == dhash:
+    def process_sample(self, task: Task):
+        parent_payload = task.get_payload("parent")
+        if isinstance(parent_payload, RemoteResource):
+            # Upload parent file
+            _, parent = self._upload_file(
+                task,
+                task.get_payload("parent"),
+            )
+        elif isinstance(parent_payload, str):
+            # Query parent object hash
+            parent = self.mwdb.query(parent_payload, raise_not_found=False)
+        else:
             parent = None
 
-        self.log.info("[sample %s] Querying for sample", dhash)
-
-        file = mwdb.query_file(dhash, raise_not_found=False)  # type: ignore
-        if file is not None:
-            self.log.info("[sample %s] Sample already exists", dhash)
-
-            # If file already exists: check whether parent is attached
-            if parent and all(attached.id != parent.id for attached in file.parents):
-                self.log.info("[sample %s] Adding parent: %s", dhash, parent.id)
-                parent.add_child(file)
-
-            # If file already exists:
-            # check whether appropriate karton key exists and add it otherwise
-            if task.root_uid not in file.metakeys.get("karton", []):
-                self.log.info(
-                    "[sample %s] Adding metakey karton: %s",
-                    dhash,
-                    task.root_uid,
-                )
-                file.add_metakey("karton", task.root_uid)
-        else:
-            self.log.info("[sample %s] Sample doesn't exist, uploading", dhash)
-
-            if resource.size > MWDBReporter.MAX_FILE_SIZE:
-                self.log.warn("Sample is too big (%d bytes), skipping", resource.size)
-                return None
-
-            # Consistent logging
-            if parent:
-                self.log.info("[sample %s] Adding parent: %s", dhash, parent.id)
-            self.log.info(
-                "[sample %s] Adding metakey karton: %s",
-                dhash,
-                task.root_uid,
-            )
-
-            file = mwdb.upload_file(
-                resource.name,
-                cast(bytes, resource.content),
-                metakeys={"karton": task.root_uid},
-                parent=parent,
-            )
-
-        return file
-
-    def _upload_config(
-        self,
-        task: Task,
-        mwdb: MWDB,
-        family: str,
-        config: Dict[str, Any],
-        parent: Optional[MWDBObject] = None,
-    ) -> MWDBConfig:
-        """
-        Upload config to MWDB ensuring that 'karton' metakey is set.
-
-        :param mwdb: MWDB instance
-        :param family: Malware family
-        :param config: dict with static configuration
-        :param parent: MWDBObject with config parent
-        :return: MWDBFile instance
-        """
-        if "store-in-gridfs" in config:
-            raise Exception(
-                "Found a 'store-in-gridfs' item inside a config from family: %s", family
-            )
-        # Upload config
-        config_object = mwdb.upload_config(
-            family,
-            config,
+        self._upload_file(
+            task,
+            task.get_payload("sample"),
             parent=parent,
-            metakeys={"karton": task.root_uid},
+            tags=task.get_payload("tags", []),
+            attributes=task.get_payload("attributes", {}),
+            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
         )
-        dhash = config_object.id
-        self.log.info("[config %s] Uploaded %s config", dhash, family)
-        if parent:
-            self.log.info("[config %s] Adding parent: %s", dhash, parent.id)
-        self._tag_children_blobs(config=config_object)
-        self.log.info("[config %s] Adding metakey karton: %s", dhash, task.root_uid)
-        return config_object
 
-    def _add_metakey(self, mwdb_object: MWDBObject, key: str, value: str) -> None:
-        """
-        Add a metakey to passed object.
-        ``add_metakey`` is deprecated but we use it here to keep compatibility with
-        MWDB instances that do not yet expose the "attribute" endpoint
-
-        :param mwdb_object: MWDBObject instance
-        :param key: Metakey name
-        :param value: Metakey value
-        """
-
-        if value not in mwdb_object.metakeys.get(key, []):
-            self.log.info(
-                "[%s %s] Adding metakey %s: %s",
-                mwdb_object.TYPE,
-                mwdb_object.id,
-                key,
-                value,
-            )
-            mwdb_object.add_metakey(key, value)
-
-    def _add_attribute(self, mwdb_object: MWDBObject, key: str, value: Any) -> None:
-        """
-        Add a attribute to passed object.
-
-        :param mwdb_object: MWDBObject instance
-        :param key: Attribute name
-        :param value: Attribute value, must be JSON-serializable
-        """
-
-        if value not in mwdb_object.attributes.get(key, []):
-            self.log.info(
-                "[%s %s] Adding attribute %s: %s",
-                mwdb_object.TYPE,
-                mwdb_object.id,
-                key,
-                value,
-            )
-            mwdb_object.add_attribute(key, value)
-
-    def process_config(self, task: Task, mwdb: MWDB) -> MWDBConfig:
-        """
-        Processing of Config task
-
-        Clarification:
-            sample -> parent -> config
-            sample is original sample
-            parent is parent of the config
-            config is config
-
-        :param mwdb: MWDB instance
-        :return: MWDBConfig object
-        """
+    def process_config(self, task: Task):
         config_data = task.get_payload("config")
         family = (
             task.headers["family"]
             or config_data.get("family")
             or config_data.get("type", "unknown")
         )
+        config_type = task.headers.get("config_type", "static")
 
-        if task.has_payload("sample"):
-            sample = self._upload_file(task, mwdb, task.get_payload("sample"))
-            if sample:
-                self.log.info("[sample %s] Adding tag ripped:%s", sample.id, family)
-                sample.add_tag("ripped:" + family)
-            else:
-                self.log.warning("Couldn't upload original sample")
-        else:
-            sample = None
-
-        if task.has_payload("parent"):
-            parent = self._upload_file(
-                task, mwdb, task.get_payload("parent"), parent=sample
+        if "store-in-gridfs" in config_data:
+            raise Exception(
+                "Found a 'store-in-gridfs' item inside a config from family: %s", family
             )
-            if parent:
-                self.log.info("[sample %s] Adding tag %s", parent.id, family)
-                parent.add_tag(family)
-            else:
-                self.log.warning("Couldn't upload parent sample")
-        else:
-            parent = None
 
-        config = self._upload_config(task, mwdb, family, config_data, parent=parent)
-        return config
-
-    def process_sample(self, task: Task, mwdb: MWDB) -> Optional[MWDBFile]:
-        """
-        Processing of Sample task
-
-        :param mwdb: MWDB instance
-        :return: MWDBFile object or None
-        """
-        if task.has_payload("parent"):
-            parent = self._upload_file(task, mwdb, task.get_payload("parent"))
-        else:
-            parent = None
-
+        # Upload original sample
         if task.has_payload("sample"):
-            sample = self._upload_file(
-                task, mwdb, task.get_payload("sample"), parent=parent
+            _, sample = self._upload_file(
+                task,
+                task.get_payload("sample"),
+                tags=["ripped:" + family]
             )
         else:
             sample = None
 
-        return sample
+        # Upload dump that contains recognized config information
+        if task.has_payload("parent"):
+            _, parent = self._upload_file(
+                task,
+                task.get_payload("parent"),
+                parent=sample,
+                tags=[family]
+            )
+        else:
+            parent = None
+
+        is_new, config = self._upload_config(
+            task,
+            family,
+            config_type,
+            config_data,
+            parent=parent,
+            tags=task.get_payload("tags", []),
+            attributes=task.get_payload("attributes", {}),
+            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
+        )
+        if not is_new:
+            self._tag_children_blobs(cast(MWDBConfig, config))
+
+    def process_blob(self, task: Task):
+        parent_payload = task.get_payload("parent")
+        if isinstance(parent_payload, RemoteResource):
+            # Upload parent file
+            _, parent = self._upload_file(
+                task,
+                task.get_payload("parent"),
+            )
+        elif isinstance(parent_payload, str):
+            # Query parent object hash
+            parent = self.mwdb.query(parent_payload, raise_not_found=False)
+        else:
+            parent = None
+
+        self._upload_blob(
+            task,
+            blob_name=task.get_payload("name"),
+            blob_type=task.headers["blob_type"],
+            content=task.get_payload("blob"),
+            parent=parent,
+            tags=task.get_payload("tags", []),
+            attributes=task.get_payload("attributes", {}),
+            comments=task.get_payload("comments", []) or task.get_payload("additional_info", [])
+        )
 
     def process(self, task: Task) -> None:  # type: ignore
-        mwdb = self.mwdb()
         object_type = task.headers["type"]
         mwdb_object: Optional[MWDBObject]
 
         if object_type == "sample":
-            mwdb_object = self.process_sample(task, mwdb)
+            self.process_sample(task)
+        elif object_type == "config":
+            self.process_config(task)
+        elif object_type == "blob":
+            self.process_blob(task)
         else:
-            mwdb_object = self.process_config(task, mwdb)
-
-        if not mwdb_object:
-            return
-
-        # Add payload tags
-        if task.has_payload("tags"):
-            for tag in task.get_payload("tags"):
-                if tag not in mwdb_object.tags:
-                    self.log.info(
-                        "[%s %s] Adding tag %s", mwdb_object.TYPE, mwdb_object.id, tag
-                    )
-                    mwdb_object.add_tag(tag)
-
-        # Add payload attributes
-        if task.has_payload("attributes"):
-            for key, values in task.get_payload("attributes").items():
-                for value in values:
-                    if type(value) is str:
-                        # this is kept for compatibility with older mwdb-core instances
-                        self._add_metakey(mwdb_object=mwdb_object, key=key, value=value)
-                    else:
-                        self._add_attribute(
-                            mwdb_object=mwdb_object, key=key, value=value
-                        )
-
-        # Add payload comments
-        comments = task.get_payload("comments") or task.get_payload("additional_info")
-        if comments:
-            for comment in comments:
-                self.log.info(
-                    "[%s %s] Adding comment: %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    repr(comment),
-                )
-                mwdb_object.add_comment(comment)
+            raise RuntimeError("Unsupported object type")
