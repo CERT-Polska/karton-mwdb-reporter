@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
-from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBObject
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
 from mwdblib.api.options import APIClientOptions
 
 from .__version__ import __version__
@@ -71,7 +71,8 @@ class MWDBReporter(Karton):
     ```
     """  # noqa
 
-    identity = "karton.mwdb-reporter"
+    identity = "karton.mwdb-reporter-test"
+    persistent = False
     version = __version__
     filters = [
         {"type": "sample", "stage": "recognized"},
@@ -119,15 +120,30 @@ class MWDBReporter(Karton):
     ):
         # Add attributes
         for key, values in attributes.items():
+            if key == "karton":
+                # Omitting karton attribute
+                continue
             for value in values:
-                self.log.info(
-                    "[%s %s] Adding attribute %s: %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    key,
-                    value,
-                )
-                mwdb_object.add_attribute(key, value)
+                if (
+                    key not in mwdb_object.attributes
+                    or value not in mwdb_object.attributes[key]
+                ):
+                    self.log.info(
+                        "[%s %s] Adding attribute %s: %s",
+                        mwdb_object.TYPE,
+                        mwdb_object.id,
+                        key,
+                        value,
+                    )
+                    mwdb_object.add_attribute(key, value)
+                else:
+                    self.log.info(
+                        "[%s %s] Already added attribute %s: %s",
+                        mwdb_object.TYPE,
+                        mwdb_object.id,
+                        key,
+                        value,
+                    )
 
     def _add_comments(self, mwdb_object: MWDBObject, comments: List[str]):
         # Add comments
@@ -286,7 +302,7 @@ class MWDBReporter(Karton):
             parent = None
 
         def file_getter():
-            self.log.info("[sample %s] Querying for object", file_id)
+            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, file_id)
             return self.mwdb.query_file(file_id, raise_not_found=False)
 
         return self._upload_object(
@@ -386,7 +402,8 @@ class MWDBReporter(Karton):
             if type(item) is MWDBBlob:
                 tag = config.family
                 self.log.info(
-                    "[blob %s] Adding family tag '%s' inherited from parent sample",
+                    "[%s %s] Adding family tag '%s' inherited from parent sample",
+                    MWDBBlob.TYPE,
                     item.id,
                     tag,
                 )
