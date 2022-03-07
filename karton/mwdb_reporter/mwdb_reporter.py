@@ -100,7 +100,7 @@ class MWDBReporter(Karton):
             setattr(self, "_mwdb", self._get_mwdb())
         return getattr(self, "_mwdb")
 
-    def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]):
+    def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]) -> None:
         # Upload tags and attributes via subsequent requests
         for tag in tags:
             if tag not in mwdb_object.tags:
@@ -118,7 +118,7 @@ class MWDBReporter(Karton):
 
     def _add_attributes(
         self, mwdb_object: MWDBObject, attributes: Dict[str, List[Any]]
-    ):
+    ) -> None:
         # Add attributes
         for key, values in attributes.items():
             if key == "karton":
@@ -146,7 +146,7 @@ class MWDBReporter(Karton):
                         value,
                     )
 
-    def _add_comments(self, mwdb_object: MWDBObject, comments: List[str]):
+    def _add_comments(self, mwdb_object: MWDBObject, comments: List[str]) -> None:
         # Add comments
         for comment in comments:
             if comment not in mwdb_object.comments:
@@ -158,7 +158,7 @@ class MWDBReporter(Karton):
                 )
                 mwdb_object.add_comment(comment)
 
-    def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]):
+    def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]) -> None:
         if parent:
             if all(attached.id != parent.id for attached in mwdb_object.parents):
                 self.log.info(
