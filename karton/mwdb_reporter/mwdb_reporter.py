@@ -94,11 +94,9 @@ class MWDBReporter(Karton):
             mwdb.login(mwdb_config["username"], mwdb_config["password"])
         return mwdb
 
-    @property
-    def mwdb(self) -> MWDB:
-        if not hasattr(self, "_mwdb"):
-            setattr(self, "_mwdb", self._get_mwdb())
-        return getattr(self, "_mwdb")
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.mwdb = self._get_mwdb()
 
     def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]) -> None:
         # Upload tags and attributes via subsequent requests
@@ -158,7 +156,9 @@ class MWDBReporter(Karton):
                 )
                 mwdb_object.add_comment(comment)
 
-    def _add_parent(self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]) -> None:
+    def _add_parent(
+        self, mwdb_object: MWDBObject, parent: Optional[MWDBObject]
+    ) -> None:
         if parent:
             if all(attached.id != parent.id for attached in mwdb_object.parents):
                 self.log.info(
