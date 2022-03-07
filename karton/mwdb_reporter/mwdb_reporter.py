@@ -71,8 +71,7 @@ class MWDBReporter(Karton):
     ```
     """  # noqa
 
-    identity = "karton.mwdb-reporter-test"
-    persistent = False
+    identity = "karton.mwdb-reporter"
     version = __version__
     filters = [
         {"type": "sample", "stage": "recognized"},
