@@ -43,7 +43,9 @@ class MWDBReporter(Karton):
         },
         "payload": {
             "sample": Resource with **original** sample contents
+                      or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
+                      or identifier (hash) of object
             "tags": optional, list of additional tags to be added
             "attributes": optional, dict with attributes to be added
             "comments": optional, list of comments to be added (legacy alias: "additional_info")
@@ -450,17 +452,32 @@ class MWDBReporter(Karton):
 
         # Upload original sample
         sample: Optional[MWDBObject] = None
-        if task.has_payload("sample"):
+        sample_payload = task.get_payload("sample")
+        if isinstance(sample_payload, RemoteResource):
+            # Upload original sample file
             _, sample = self._upload_file(
                 task, task.get_payload("sample"), tags=["ripped:" + family]
             )
+        elif isinstance(sample_payload, str):
+            # Query original sample object hash
+            sample = self.mwdb.query_file(sample_payload, raise_not_found=False)
+            if sample:
+                self._add_tags(sample, ["ripped:" + family])
 
         # Upload dump that contains recognized config information
         parent: Optional[MWDBObject] = None
-        if task.has_payload("parent"):
+        parent_payload = task.get_payload("parent")
+        if isinstance(parent_payload, RemoteResource):
+            # Upload parent file
             _, parent = self._upload_file(
                 task, task.get_payload("parent"), parent=sample, tags=[family]
             )
+        elif isinstance(parent_payload, str):
+            # Query parent object hash
+            parent = self.mwdb.query(parent_payload, raise_not_found=False)
+            if parent:
+                self._add_parent(parent, parent=sample)
+                self._add_tags(parent, [family])
 
         is_new, config = self._upload_config(
             task,
