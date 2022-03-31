@@ -14,6 +14,9 @@ Uploads samples and static configs to malwaredb
 },
 {
     "type": "config"
+},
+{
+    "type": "blob"
 }
 ```
 
