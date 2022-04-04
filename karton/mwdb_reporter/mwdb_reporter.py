@@ -58,7 +58,7 @@ class MWDBReporter(Karton):
     {
         "headers": {
             "type": "blob",
-            "blob_type": <blob type>
+            "kind": <blob type>
         },
         "payload": {
             "name": String with blob name
@@ -508,8 +508,8 @@ class MWDBReporter(Karton):
 
         self._upload_blob(
             task,
-            blob_name=task.get_payload("name"),
-            blob_type=task.headers["blob_type"],
+            blob_name=task.get_payload("name", default="blob"),
+            blob_type=task.headers["kind"],
             content=task.get_payload("blob"),
             parent=parent,
             tags=task.get_payload("tags", []),
