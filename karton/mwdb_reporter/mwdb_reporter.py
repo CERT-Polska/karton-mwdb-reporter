@@ -167,7 +167,7 @@ class MWDBReporter(Karton):
                     mwdb_object.id,
                     parent.id,
                 )
-                parent.add_child(parent)
+                parent.add_child(mwdb_object)
             else:
                 self.log.info(
                     "[%s %s] Parent already added: %s",
