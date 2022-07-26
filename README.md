@@ -30,6 +30,17 @@ Uploads samples and static configs to malwaredb
 
 First of all, make sure you have setup the core system: https://github.com/CERT-Polska/karton
 
+Modify your `karton.ini` config to include information about your mwdb-core instance and reporter credentials:
+
+```ini
+[mwdb]
+api_url = http://mwdb.my-awesome-org/api/
+api_key = eyJhYWF....
+```
+
+Instead of providing `api_key` you can also use `username`/`password` but keep in mind that the service will need to login into mwdb on each task and will work a bit slower.
+
+
 Then install karton-mwdb-reporter from PyPi:
 
 ```shell
