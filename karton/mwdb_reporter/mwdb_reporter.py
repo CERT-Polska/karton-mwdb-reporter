@@ -518,7 +518,7 @@ class MWDBReporter(Karton):
             or task.get_payload("additional_info", []),
         )
 
-    def process(self, task: Task) -> None:  # type: ignore
+    def process(self, task: Task) -> None:
         object_type = task.headers["type"]
         mwdb_object: Optional[MWDBObject]
 
