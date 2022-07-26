@@ -84,7 +84,7 @@ class MWDBReporter(Karton):
     MAX_FILE_SIZE = 1024 * 1024 * 40
 
     def _get_mwdb(self) -> MWDB:
-        mwdb_config = dict(self.config.config.items("mwdb"))
+        mwdb_config = self.config["mwdb"]
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
             api_url=mwdb_config.get("api_url", APIClientOptions.api_url),
