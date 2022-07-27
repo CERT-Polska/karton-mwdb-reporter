@@ -88,10 +88,12 @@ class MWDBReporter(Karton):
         mwdb = MWDB(
             api_key=mwdb_config.get("api_key"),
             api_url=mwdb_config.get("api_url", APIClientOptions.api_url),
+            username=mwdb_config.get("username"),
+            password=mwdb_config.get("password"),
+            verify_ssl=self.config.getboolean("mwdb", "verify_ssl"),
             retry_on_downtime=True,
+            use_keyring=False,
         )
-        if not mwdb.api.auth_token:
-            mwdb.login(mwdb_config["username"], mwdb_config["password"])
         return mwdb
 
     def __init__(self, *args, **kwargs) -> None:
