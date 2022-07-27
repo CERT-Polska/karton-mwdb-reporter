@@ -90,7 +90,7 @@ class MWDBReporter(Karton):
             api_url=mwdb_config.get("api_url", APIClientOptions.api_url),
             username=mwdb_config.get("username"),
             password=mwdb_config.get("password"),
-            verify_ssl=self.config.getboolean("mwdb", "verify_ssl"),
+            verify_ssl=self.config.getboolean("mwdb", "verify_ssl", True),
             retry_on_downtime=True,
             use_keyring=False,
         )
