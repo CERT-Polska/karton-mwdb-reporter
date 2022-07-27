@@ -38,7 +38,7 @@ api_url = http://mwdb.my-awesome-org/api/
 api_key = eyJhYWF....
 ```
 
-Instead of providing `api_key` you can also use `username`/`password` but keep in mind that the service will need to login into mwdb on each task and will work a bit slower.
+Instead of providing `api_key` you can also use `username`/`password` but password-authenticated sessions are short-lived and service will need to re-auth from time to time.
 
 
 Then install karton-mwdb-reporter from PyPi:
