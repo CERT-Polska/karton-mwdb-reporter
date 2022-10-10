@@ -455,6 +455,8 @@ class MWDBReporter(Karton):
 
     def process_config(self, task: Task) -> None:
         config_data = task.get_payload("config")
+        warning_comments = []
+
         family = (
             task.headers["family"]
             or config_data.get("family")
@@ -498,7 +500,11 @@ class MWDBReporter(Karton):
                 _, parent = uploaded
             else:
                 self.log.warning("Failed to upload parent for config")
-                # we can try to link the config to the grandparent if we couldn't upload the parent
+                warning_comments.append(
+                    "warning: mwdb-reporter failed to upload the source memory dump "
+                    "and the config is linked to the closest possible relative"
+                )
+                # link the config to grandparent if we couldn't upload the parent
                 if sample is not None:
                     parent = sample
         elif isinstance(parent_payload, str):
@@ -516,8 +522,11 @@ class MWDBReporter(Karton):
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
-            comments=task.get_payload("comments", [])
-            or task.get_payload("additional_info", []),
+            comments=(
+                task.get_payload("comments", [])
+                or task.get_payload("additional_info", [])
+            )
+            + warning_comments,
         )
         if not is_new:
             self._tag_children_blobs(cast(MWDBConfig, config))
