@@ -41,6 +41,7 @@ class MWDBReporter(Karton):
         "headers": {
             "type": "config",
             "family": <malware family>
+            "config_type": <config type> ("static" by default)
         },
         "payload": {
             "sample": Resource with **original** sample contents
