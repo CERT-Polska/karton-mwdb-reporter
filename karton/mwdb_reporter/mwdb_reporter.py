@@ -1,5 +1,4 @@
 import hashlib
-
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
@@ -352,11 +351,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+
         def config_dhash(obj):
             if isinstance(obj, list):
                 return config_dhash(str(sorted([config_dhash(o) for o in obj])))
             elif isinstance(obj, dict):
-                return config_dhash([[o, config_dhash(obj[o])] for o in sorted(obj.keys())])
+                return config_dhash(
+                    [[o, config_dhash(obj[o])] for o in sorted(obj.keys())]
+                )
             else:
                 return hashlib.sha256(bytes(str(obj), "utf-8")).hexdigest()
 
@@ -410,7 +412,7 @@ class MWDBReporter(Karton):
         def blob_getter():
             self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, blob_id)
             return self.mwdb.query_blob(blob_id, raise_not_found=False)
-        
+
         return self._upload_object(
             object_getter=blob_getter,
             object_uploader=self.mwdb.upload_blob,
