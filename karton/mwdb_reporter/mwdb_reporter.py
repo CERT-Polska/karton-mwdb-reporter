@@ -1,3 +1,5 @@
+import hashlib
+
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
@@ -350,8 +352,22 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        def config_dhash(obj):
+            if isinstance(obj, list):
+                return config_dhash(str(sorted([config_dhash(o) for o in obj])))
+            elif isinstance(obj, dict):
+                return config_dhash([[o, config_dhash(obj[o])] for o in sorted(obj.keys())])
+            else:
+                return hashlib.sha256(bytes(str(obj), "utf-8")).hexdigest()
+
+        config_id = config_dhash(config)
+
+        def config_getter():
+            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, config_id)
+            return self.mwdb.query_config(config_id, raise_not_found=False)
+
         return self._upload_object(
-            object_getter=None,
+            object_getter=config_getter,
             object_uploader=self.mwdb.upload_config,
             object_params=dict(
                 family=family,
@@ -389,8 +405,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        blob_id = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        def blob_getter():
+            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, blob_id)
+            return self.mwdb.query_blob(blob_id, raise_not_found=False)
+        
         return self._upload_object(
-            object_getter=None,
+            object_getter=blob_getter,
             object_uploader=self.mwdb.upload_blob,
             object_params=dict(
                 name=blob_name,
