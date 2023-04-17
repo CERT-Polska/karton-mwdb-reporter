@@ -431,7 +431,10 @@ class MWDBReporter(Karton):
 
         if task.headers.get("stage") == "unrecognized" and not self.report_unrecognized:
             self.log.info(
-                "Sample is unrecognized and reporter is not configured to report them, dropping the task"
+                (
+                    "Sample is unrecognized and reporter is not configured to report them, "
+                    "dropping the task"
+                )
             )
             return
 
@@ -600,7 +603,7 @@ class MWDBReporter(Karton):
     @classmethod
     def config_from_args(cls, config: Config, args: argparse.Namespace) -> None:
         """
-        Updates configuration with settings from argumentshttps://github.com/CERT-Polska/karton/pull/210
+        Updates configuration with settings from arguments
         This method should be overridden and call super methods
         if you want to add more arguments.
         """
