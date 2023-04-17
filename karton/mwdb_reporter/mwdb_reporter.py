@@ -1,11 +1,10 @@
+import argparse
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
-from karton.core import Karton, RemoteResource, Task, Config
+from karton.core import Config, Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
 from mwdblib.api.options import APIClientOptions
 from mwdblib.exc import ObjectTooLargeError
-
-import argparse
 
 from .__version__ import __version__
 
