@@ -432,8 +432,8 @@ class MWDBReporter(Karton):
         if task.headers.get("stage") == "unrecognized" and not self.report_unrecognized:
             self.log.info(
                 (
-                    "Sample is unrecognized and reporter is not configured to report them, "
-                    "dropping the task"
+                    "Sample is unrecognized and reporter is not configured "
+                    "to report them, dropping the task"
                 )
             )
             return
@@ -569,7 +569,7 @@ class MWDBReporter(Karton):
             task,
             blob_name=task.get_payload("name", default="blob"),
             blob_type=task.headers["kind"],
-            content=task.get_payload("content"),
+            content=task.get_payload("content"),arguments
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
