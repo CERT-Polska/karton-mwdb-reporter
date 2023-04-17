@@ -10,7 +10,7 @@ Uploads samples and static configs to malwaredb
 ```
 {
     "type": "sample",
-    "stage": "recognized" || "analyzed"
+    "stage": "recognized" || "analyzed" || "unrecognized"
 },
 {
     "type": "config"
