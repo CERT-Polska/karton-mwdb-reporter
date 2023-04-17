@@ -232,6 +232,7 @@ class MWDBReporter(Karton):
                 if tags:
                     metadata.append("tags: " + ",".join(tags))
                 if attributes:
+                    attributes.pop("karton", None)
                     metadata.append("attributes: " + ",".join(attributes.keys()))
                 if not metadata:
                     metadata_info = "no metadata"
