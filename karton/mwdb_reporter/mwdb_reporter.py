@@ -569,7 +569,7 @@ class MWDBReporter(Karton):
             task,
             blob_name=task.get_payload("name", default="blob"),
             blob_type=task.headers["kind"],
-            content=task.get_payload("content"),arguments
+            content=task.get_payload("content"),
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
