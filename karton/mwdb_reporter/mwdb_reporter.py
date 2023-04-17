@@ -430,7 +430,9 @@ class MWDBReporter(Karton):
         parent: Optional[MWDBObject]
 
         if task.headers.get("stage") == "unrecognized" and not self.report_unrecognized:
-            self.log.info("Sample is unrecognized and reporter is not configured to report them, dropping the task")
+            self.log.info(
+                "Sample is unrecognized and reporter is not configured to report them, dropping the task"
+            )
             return
 
         if isinstance(parent_payload, RemoteResource):
