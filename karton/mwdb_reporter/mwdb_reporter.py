@@ -2,7 +2,7 @@ import hashlib
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Karton, RemoteResource, Task
-from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject, config_dhash
 from mwdblib.api.options import APIClientOptions
 from mwdblib.exc import ObjectTooLargeError
 
@@ -351,17 +351,6 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
-
-        def config_dhash(obj):
-            if isinstance(obj, list):
-                return config_dhash(str(sorted([config_dhash(o) for o in obj])))
-            elif isinstance(obj, dict):
-                return config_dhash(
-                    [[o, config_dhash(obj[o])] for o in sorted(obj.keys())]
-                )
-            else:
-                return hashlib.sha256(bytes(str(obj), "utf-8")).hexdigest()
-
         config_id = config_dhash(config)
 
         def config_getter():
