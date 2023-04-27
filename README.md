@@ -56,7 +56,7 @@ Using the `--report-unrecognized` flag you specify whether the reporter should u
 
 ```ini
 [mwdb-reporter]
-report_unrecognized=false
+report_unrecognized=true
 ```
 
 or setting the environmental variable like so `KARTON_MWDB-REPORTER_REPORT_UNRECOGNIZED=true`.
