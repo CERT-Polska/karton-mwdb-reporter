@@ -1,8 +1,9 @@
 import argparse
+import hashlib
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from karton.core import Config, Karton, RemoteResource, Task
-from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject, config_dhash
 from mwdblib.api.options import APIClientOptions
 from mwdblib.exc import ObjectTooLargeError
 
@@ -356,8 +357,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        config_id = config_dhash(config)
+
+        def config_getter():
+            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, config_id)
+            return self.mwdb.query_config(config_id, raise_not_found=False)
+
         return self._upload_object(
-            object_getter=None,
+            object_getter=config_getter,
             object_uploader=self.mwdb.upload_config,
             object_params=dict(
                 family=family,
@@ -395,8 +402,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        blob_id = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        def blob_getter():
+            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, blob_id)
+            return self.mwdb.query_blob(blob_id, raise_not_found=False)
+
         return self._upload_object(
-            object_getter=None,
+            object_getter=blob_getter,
             object_uploader=self.mwdb.upload_blob,
             object_params=dict(
                 name=blob_name,
