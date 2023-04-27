@@ -4,3 +4,5 @@
 __pycache__
 venv
 karton.ini
+build
+karton_mwdb_reporter.egg-info/
