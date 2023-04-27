@@ -1,6 +1,7 @@
+import argparse
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
-from karton.core import Karton, RemoteResource, Task
+from karton.core import Config, Karton, RemoteResource, Task
 from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
 from mwdblib.api.options import APIClientOptions
 from mwdblib.exc import ObjectTooLargeError
@@ -17,7 +18,7 @@ class MWDBReporter(Karton):
     {
         "headers": {
             "type": "sample",
-            "stage": "recognized" (to be processed) or "analyzed" (final artifact)
+            "stage": "recognized" (to be processed), "analyzed" (final artifact) or "unrecognized" (unknown file)
             "kind": all but not "raw", must have known type or be checked first by "karton.classifier"
             "platform": optional target platform
             "extension": optional file type extension
@@ -80,6 +81,7 @@ class MWDBReporter(Karton):
     filters = [
         {"type": "sample", "stage": "recognized"},
         {"type": "sample", "stage": "analyzed"},
+        {"type": "sample", "stage": "unrecognized"},
         {"type": "config"},
         {"type": "blob"},
     ]
@@ -100,6 +102,10 @@ class MWDBReporter(Karton):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.mwdb = self._get_mwdb()
+
+        self.report_unrecognized = self.config.getboolean(
+            "mwdb-reporter", "report_unrecognized", fallback=False
+        )
 
     def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]) -> None:
         # Upload tags and attributes via subsequent requests
@@ -423,6 +429,15 @@ class MWDBReporter(Karton):
         parent_payload = task.get_payload("parent")
         parent: Optional[MWDBObject]
 
+        if task.headers.get("stage") == "unrecognized" and not self.report_unrecognized:
+            self.log.info(
+                (
+                    "Sample is unrecognized and reporter is not configured "
+                    "to report them, dropping the task"
+                )
+            )
+            return
+
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
             uploaded = self._upload_file(
@@ -573,3 +588,27 @@ class MWDBReporter(Karton):
             self.process_blob(task)
         else:
             raise RuntimeError("Unsupported object type")
+
+    @classmethod
+    def args_parser(cls) -> argparse.ArgumentParser:
+        parser = super().args_parser()
+        parser.add_argument(
+            "--report-unrecognized",
+            action="store_true",
+            default=None,
+            help="Upload files unrecognized by classifier (false by default)",
+        )
+        return parser
+
+    @classmethod
+    def config_from_args(cls, config: Config, args: argparse.Namespace) -> None:
+        """
+        Updates configuration with settings from arguments
+        This method should be overridden and call super methods
+        if you want to add more arguments.
+        """
+        config.load_from_dict(
+            {
+                "mwdb-reporter": {"report_unrecognized": args.report_unrecognized},
+            }
+        )
