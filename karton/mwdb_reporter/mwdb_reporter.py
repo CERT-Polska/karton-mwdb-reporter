@@ -129,9 +129,6 @@ class MWDBReporter(Karton):
     ) -> None:
         # Add attributes
         for key, values in attributes.items():
-            if key == "karton":
-                # Omitting karton attribute
-                continue
             for value in values:
                 if (
                     key not in mwdb_object.attributes
@@ -222,6 +219,9 @@ class MWDBReporter(Karton):
             existing_object = None
 
         metadata: List[str] = []
+
+        # Filter out 'karton' attribute which should not be reuploaded
+        attributes = {k: v for k, v in attributes.items() if k != "karton"}
 
         if not existing_object:
             if self.mwdb.api.supports_version("2.6.0"):
