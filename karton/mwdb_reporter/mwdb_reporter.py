@@ -615,11 +615,7 @@ class MWDBReporter(Karton):
 
     @classmethod
     def config_from_args(cls, config: Config, args: argparse.Namespace) -> None:
-        """
-        Updates configuration with settings from arguments
-        This method should be overridden and call super methods
-        if you want to add more arguments.
-        """
+        super().config_from_args(config, args)
         config.load_from_dict(
             {
                 "mwdb-reporter": {"report_unrecognized": args.report_unrecognized},
