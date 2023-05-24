@@ -360,7 +360,7 @@ class MWDBReporter(Karton):
         config_id = config_dhash(config)
 
         def config_getter():
-            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, config_id)
+            self.log.info("[%s %s] Querying for object", MWDBConfig.TYPE, config_id)
             return self.mwdb.query_config(config_id, raise_not_found=False)
 
         return self._upload_object(
@@ -405,7 +405,7 @@ class MWDBReporter(Karton):
         blob_id = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
         def blob_getter():
-            self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, blob_id)
+            self.log.info("[%s %s] Querying for object", MWDBBlob.TYPE, blob_id)
             return self.mwdb.query_blob(blob_id, raise_not_found=False)
 
         return self._upload_object(
