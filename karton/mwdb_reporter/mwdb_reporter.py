@@ -20,9 +20,6 @@ class MWDBReporter(Karton):
         "headers": {
             "type": "sample",
             "stage": "recognized" (to be processed), "analyzed" (final artifact) or "unrecognized" (unknown file)
-            "kind": all but not "raw", must have known type or be checked first by "karton.classifier"
-            "platform": optional target platform
-            "extension": optional file type extension
         },
         "payload": {
             "sample": Resource with sample contents
@@ -35,8 +32,6 @@ class MWDBReporter(Karton):
     }
     ```
 
-    Samples are decorated with tag: ``kind:platform:extension`` or ``misc:kind`` if platform is missing
-
     Expected incoming task structure for configs:
     ```
     {
@@ -46,6 +41,7 @@ class MWDBReporter(Karton):
             "config_type": <config type> ("static" by default)
         },
         "payload": {
+            "config": Resource with JSON-encoded config file
             "sample": Resource with **original** sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
