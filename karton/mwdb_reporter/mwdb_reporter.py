@@ -41,7 +41,7 @@ class MWDBReporter(Karton):
             "config_type": <config type> ("static" by default)
         },
         "payload": {
-            "config": Resource with JSON-encoded config file
+            "config": config file
             "sample": Resource with **original** sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
