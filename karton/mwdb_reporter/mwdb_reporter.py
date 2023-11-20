@@ -219,63 +219,58 @@ class MWDBReporter(Karton):
         # Filter out 'karton' attribute which should not be reuploaded
         attributes = {k: v for k, v in attributes.items() if k != "karton"}
 
-        if not existing_object:
-            if self.mwdb.api.supports_version("2.6.0"):
-                mwdb_object = object_uploader(
-                    **object_params,
-                    parent=parent,
-                    tags=tags,
-                    attributes=attributes,
-                    karton_id=karton_id
-                )
-
-                if parent:
-                    metadata.append("parent: " + parent.id)
-                if tags:
-                    metadata.append("tags: " + ",".join(tags))
-                if attributes:
-                    metadata.append("attributes: " + ",".join(attributes.keys()))
-                if not metadata:
-                    metadata_info = "no metadata"
-                else:
-                    metadata_info = "including " + "; ".join(metadata)
-                self.log.info(
-                    "[%s %s] Uploaded object %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    metadata_info,
-                )
-            else:
-                # 2.0.0+ Backwards compatible version
+        if self.mwdb.api.supports_version("2.6.0"):
+            mwdb_object = object_uploader(
+                **object_params,
+                parent=parent,
+                tags=tags,
+                attributes=attributes,
+                karton_id=karton_id
+            )
+        else:
+            # 2.0.0+ Backwards compatible version
+            if not existing_object:
                 mwdb_object = object_uploader(
                     **object_params, parent=parent, metakeys={"karton": karton_id}
                 )
-                if parent:
-                    metadata.append("parent: " + parent.id)
-                if not metadata:
-                    metadata_info = "no metadata"
-                else:
-                    metadata_info = "including " + "; ".join(metadata)
-                self.log.info(
-                    "[%s %s] Uploaded object %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    metadata_info,
-                )
                 self._add_tags(mwdb_object, tags)
                 self._add_attributes(mwdb_object, attributes)
-            self._add_comments(mwdb_object, comments)
+            else:
+                mwdb_object = existing_object
+                self._add_parent(mwdb_object, parent)
+                self._add_tags(mwdb_object, tags)
+                self._add_attributes(mwdb_object, attributes)
+
+        self._add_comments(mwdb_object, comments)
+
+        if parent:
+            metadata.append("parent: " + parent.id)
+        if tags:
+            metadata.append("tags: " + ",".join(tags))
+        if attributes:
+            metadata.append("attributes: " + ",".join(attributes.keys()))
+        if comments:
+            metadata.append(f"comments: {len(comments)}")
+        if not metadata:
+            metadata_info = "no metadata"
         else:
-            mwdb_object = existing_object
-            self._add_parent(mwdb_object, parent)
-            self._add_tags(mwdb_object, tags)
-            self._add_attributes(mwdb_object, attributes)
-            self._add_comments(mwdb_object, comments)
+            metadata_info = "including " + "; ".join(metadata)
+
+        if existing_object:
             self.log.info(
-                "[%s %s] Added metadata to existing object",
+                "[%s %s] Uploaded object %s",
                 mwdb_object.TYPE,
                 mwdb_object.id,
+                metadata_info,
             )
+        else:
+            self.log.info(
+                "[%s %s] Added metadata to existing object %s",
+                mwdb_object.TYPE,
+                mwdb_object.id,
+                metadata_info,
+            )
+
         return not existing_object, mwdb_object
 
     def _upload_file(
