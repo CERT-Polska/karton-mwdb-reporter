@@ -252,7 +252,7 @@ class MWDBReporter(Karton):
         if comments:
             metadata.append(f"comments: {len(comments)}")
         if not metadata:
-            metadata_info = "no metadata"
+            metadata_info = "(no metadata)"
         else:
             metadata_info = "including " + "; ".join(metadata)
 
