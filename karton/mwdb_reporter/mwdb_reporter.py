@@ -225,7 +225,7 @@ class MWDBReporter(Karton):
                 parent=parent,
                 tags=tags,
                 attributes=attributes,
-                karton_id=karton_id
+                karton_id=karton_id,
             )
         else:
             # 2.0.0+ Backwards compatible version
