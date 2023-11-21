@@ -233,13 +233,12 @@ class MWDBReporter(Karton):
                 mwdb_object = object_uploader(
                     **object_params, parent=parent, metakeys={"karton": karton_id}
                 )
-                self._add_tags(mwdb_object, tags)
-                self._add_attributes(mwdb_object, attributes)
             else:
                 mwdb_object = existing_object
                 self._add_parent(mwdb_object, parent)
-                self._add_tags(mwdb_object, tags)
-                self._add_attributes(mwdb_object, attributes)
+
+            self._add_tags(mwdb_object, tags)
+            self._add_attributes(mwdb_object, attributes)
 
         self._add_comments(mwdb_object, comments)
 
