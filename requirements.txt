@@ -1,2 +1,2 @@
-mwdblib>=4.1.0
+mwdblib>=4.3.0
 karton-core>=5.0.0,<6.0.0

@@ -1,8 +1,11 @@
+import argparse
+import hashlib
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
-from karton.core import Karton, RemoteResource, Task
-from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject
+from karton.core import Config, Karton, RemoteResource, Task
+from mwdblib import MWDB, MWDBBlob, MWDBConfig, MWDBFile, MWDBObject, config_dhash
 from mwdblib.api.options import APIClientOptions
+from mwdblib.exc import ObjectTooLargeError
 
 from .__version__ import __version__
 
@@ -16,10 +19,7 @@ class MWDBReporter(Karton):
     {
         "headers": {
             "type": "sample",
-            "stage": "recognized" (to be processed) or "analyzed" (final artifact)
-            "kind": all but not "raw", must have known type or be checked first by "karton.classifier"
-            "platform": optional target platform
-            "extension": optional file type extension
+            "stage": "recognized" (to be processed), "analyzed" (final artifact) or "unrecognized" (unknown file)
         },
         "payload": {
             "sample": Resource with sample contents
@@ -32,16 +32,16 @@ class MWDBReporter(Karton):
     }
     ```
 
-    Samples are decorated with tag: ``kind:platform:extension`` or ``misc:kind`` if platform is missing
-
     Expected incoming task structure for configs:
     ```
     {
         "headers": {
             "type": "config",
-            "family": <malware family>
+            "family": <malware family>,
+            "config_type": <config type> ("static" by default)
         },
         "payload": {
+            "config": config data
             "sample": Resource with **original** sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
@@ -78,10 +78,10 @@ class MWDBReporter(Karton):
     filters = [
         {"type": "sample", "stage": "recognized"},
         {"type": "sample", "stage": "analyzed"},
+        {"type": "sample", "stage": "unrecognized"},
         {"type": "config"},
         {"type": "blob"},
     ]
-    MAX_FILE_SIZE = 1024 * 1024 * 40
 
     def _get_mwdb(self) -> MWDB:
         mwdb_config = self.config["mwdb"]
@@ -99,6 +99,10 @@ class MWDBReporter(Karton):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.mwdb = self._get_mwdb()
+
+        self.report_unrecognized = self.config.getboolean(
+            "mwdb-reporter", "report_unrecognized", fallback=False
+        )
 
     def _add_tags(self, mwdb_object: MWDBObject, tags: List[str]) -> None:
         # Upload tags and attributes via subsequent requests
@@ -121,9 +125,6 @@ class MWDBReporter(Karton):
     ) -> None:
         # Add attributes
         for key, values in attributes.items():
-            if key == "karton":
-                # Omitting karton attribute
-                continue
             for value in values:
                 if (
                     key not in mwdb_object.attributes
@@ -215,63 +216,60 @@ class MWDBReporter(Karton):
 
         metadata: List[str] = []
 
-        if not existing_object:
-            if self.mwdb.api.supports_version("2.6.0"):
-                mwdb_object = object_uploader(
-                    **object_params,
-                    parent=parent,
-                    tags=tags,
-                    attributes=attributes,
-                    karton_id=karton_id
-                )
+        # Filter out 'karton' attribute which should not be reuploaded
+        attributes = {k: v for k, v in attributes.items() if k != "karton"}
 
-                if parent:
-                    metadata.append("parent: " + parent.id)
-                if tags:
-                    metadata.append("tags: " + ",".join(tags))
-                if attributes:
-                    metadata.append("attributes: " + ",".join(attributes.keys()))
-                if not metadata:
-                    metadata_info = "no metadata"
-                else:
-                    metadata_info = "including " + "; ".join(metadata)
-                self.log.info(
-                    "[%s %s] Uploaded object %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    metadata_info,
-                )
-            else:
-                # 2.0.0+ Backwards compatible version
+        if self.mwdb.api.supports_version("2.6.0"):
+            mwdb_object = object_uploader(
+                **object_params,
+                parent=parent,
+                tags=tags,
+                attributes=attributes,
+                karton_id=karton_id,
+            )
+        else:
+            # 2.0.0+ Backwards compatible version
+            if not existing_object:
                 mwdb_object = object_uploader(
                     **object_params, parent=parent, metakeys={"karton": karton_id}
                 )
-                if parent:
-                    metadata.append("parent: " + parent.id)
-                if not metadata:
-                    metadata_info = "no metadata"
-                else:
-                    metadata_info = "including " + "; ".join(metadata)
-                self.log.info(
-                    "[%s %s] Uploaded object %s",
-                    mwdb_object.TYPE,
-                    mwdb_object.id,
-                    metadata_info,
-                )
-                self._add_tags(mwdb_object, tags)
-                self._add_attributes(mwdb_object, attributes)
-            self._add_comments(mwdb_object, comments)
-        else:
-            mwdb_object = existing_object
-            self._add_parent(mwdb_object, parent)
+            else:
+                mwdb_object = existing_object
+                self._add_parent(mwdb_object, parent)
+
             self._add_tags(mwdb_object, tags)
             self._add_attributes(mwdb_object, attributes)
-            self._add_comments(mwdb_object, comments)
+
+        self._add_comments(mwdb_object, comments)
+
+        if parent:
+            metadata.append("parent: " + parent.id)
+        if tags:
+            metadata.append("tags: " + ",".join(tags))
+        if attributes:
+            metadata.append("attributes: " + ",".join(attributes.keys()))
+        if comments:
+            metadata.append(f"comments: {len(comments)}")
+        if not metadata:
+            metadata_info = "(no metadata)"
+        else:
+            metadata_info = "including " + "; ".join(metadata)
+
+        if existing_object:
             self.log.info(
-                "[%s %s] Added metadata to existing object",
+                "[%s %s] Uploaded object %s",
                 mwdb_object.TYPE,
                 mwdb_object.id,
+                metadata_info,
             )
+        else:
+            self.log.info(
+                "[%s %s] Added metadata to existing object %s",
+                mwdb_object.TYPE,
+                mwdb_object.id,
+                metadata_info,
+            )
+
         return not existing_object, mwdb_object
 
     def _upload_file(
@@ -282,7 +280,7 @@ class MWDBReporter(Karton):
         tags: Optional[List[str]] = None,
         attributes: Optional[Dict[str, List[Any]]] = None,
         comments: Optional[List[str]] = None,
-    ) -> Tuple[bool, MWDBObject]:
+    ) -> Optional[Tuple[bool, MWDBObject]]:
         """
         Upload file to MWDB or get from repository if already exists
         ensuring that all provided metadata are set
@@ -308,16 +306,22 @@ class MWDBReporter(Karton):
             self.log.info("[%s %s] Querying for object", MWDBFile.TYPE, file_id)
             return self.mwdb.query_file(file_id, raise_not_found=False)
 
-        return self._upload_object(
-            object_getter=file_getter,
-            object_uploader=self.mwdb.upload_file,
-            object_params=dict(name=resource.name, content=resource.content),
-            parent=parent,
-            tags=tags,
-            attributes=attributes,
-            comments=comments,
-            karton_id=task.root_uid,
-        )
+        try:
+            uploaded_object = self._upload_object(
+                object_getter=file_getter,
+                object_uploader=self.mwdb.upload_file,
+                object_params=dict(name=resource.name, content=resource.content),
+                parent=parent,
+                tags=tags,
+                attributes=attributes,
+                comments=comments,
+                karton_id=task.root_uid,
+            )
+        except ObjectTooLargeError:
+            self.log.warning("[%s %s] Too large to upload", MWDBFile.TYPE, file_id)
+            return None
+
+        return uploaded_object
 
     def _upload_config(
         self,
@@ -343,8 +347,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        config_id = config_dhash(config)
+
+        def config_getter():
+            self.log.info("[%s %s] Querying for object", MWDBConfig.TYPE, config_id)
+            return self.mwdb.query_config(config_id, raise_not_found=False)
+
         return self._upload_object(
-            object_getter=None,
+            object_getter=config_getter,
             object_uploader=self.mwdb.upload_config,
             object_params=dict(
                 family=family,
@@ -382,8 +392,14 @@ class MWDBReporter(Karton):
         :param comments: List of comments to add
         :return: Tuple (is new, uploaded object)
         """
+        blob_id = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        def blob_getter():
+            self.log.info("[%s %s] Querying for object", MWDBBlob.TYPE, blob_id)
+            return self.mwdb.query_blob(blob_id, raise_not_found=False)
+
         return self._upload_object(
-            object_getter=None,
+            object_getter=blob_getter,
             object_uploader=self.mwdb.upload_blob,
             object_params=dict(
                 name=blob_name,
@@ -416,19 +432,35 @@ class MWDBReporter(Karton):
         parent_payload = task.get_payload("parent")
         parent: Optional[MWDBObject]
 
+        if task.headers.get("stage") == "unrecognized" and not self.report_unrecognized:
+            self.log.info(
+                (
+                    "Sample is unrecognized and reporter is not configured "
+                    "to report them, dropping the task"
+                )
+            )
+            return
+
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
-            _, parent = self._upload_file(
+            uploaded = self._upload_file(
                 task,
                 task.get_payload("parent"),
             )
+            if uploaded:
+                _, parent = uploaded
+            else:
+                self.log.warning(
+                    "Failed to upload parent sample, linking to root instead"
+                )
+                parent = None
         elif isinstance(parent_payload, str):
             # Query parent object hash
             parent = self.mwdb.query(parent_payload, raise_not_found=False)
         else:
             parent = None
 
-        self._upload_file(
+        uploaded = self._upload_file(
             task,
             task.get_payload("sample"),
             parent=parent,
@@ -437,9 +469,13 @@ class MWDBReporter(Karton):
             comments=task.get_payload("comments", [])
             or task.get_payload("additional_info", []),
         )
+        if uploaded is None:
+            self.log.warning("Failed to upload sample")
 
     def process_config(self, task: Task) -> None:
         config_data = task.get_payload("config")
+        warning_comments = []
+
         family = (
             task.headers["family"]
             or config_data.get("family")
@@ -457,9 +493,14 @@ class MWDBReporter(Karton):
         sample_payload = task.get_payload("sample")
         if isinstance(sample_payload, RemoteResource):
             # Upload original sample file
-            _, sample = self._upload_file(
+            uploaded = self._upload_file(
                 task, task.get_payload("sample"), tags=["ripped:" + family]
             )
+            if uploaded:
+                _, sample = uploaded
+            else:
+                self.log.warning("Failed to upload sample for config")
+
         elif isinstance(sample_payload, str):
             # Query original sample object hash
             sample = self.mwdb.query_file(sample_payload, raise_not_found=False)
@@ -471,9 +512,20 @@ class MWDBReporter(Karton):
         parent_payload = task.get_payload("parent")
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
-            _, parent = self._upload_file(
+            uploaded = self._upload_file(
                 task, task.get_payload("parent"), parent=sample, tags=[family]
             )
+            if uploaded:
+                _, parent = uploaded
+            else:
+                self.log.warning("Failed to upload parent for config")
+                warning_comments.append(
+                    "warning: mwdb-reporter failed to upload the source memory dump "
+                    "and the config is linked to the closest possible relative"
+                )
+                # link the config to grandparent if we couldn't upload the parent
+                if sample is not None:
+                    parent = sample
         elif isinstance(parent_payload, str):
             # Query parent object hash
             parent = self.mwdb.query(parent_payload, raise_not_found=False)
@@ -489,8 +541,11 @@ class MWDBReporter(Karton):
             parent=parent,
             tags=task.get_payload("tags", []),
             attributes=task.get_payload("attributes", {}),
-            comments=task.get_payload("comments", [])
-            or task.get_payload("additional_info", []),
+            comments=(
+                task.get_payload("comments", [])
+                or task.get_payload("additional_info", [])
+            )
+            + warning_comments,
         )
         if not is_new:
             self._tag_children_blobs(cast(MWDBConfig, config))
@@ -500,10 +555,15 @@ class MWDBReporter(Karton):
         parent: Optional[MWDBObject] = None
         if isinstance(parent_payload, RemoteResource):
             # Upload parent file
-            _, parent = self._upload_file(
+            uploaded = self._upload_file(
                 task,
                 task.get_payload("parent"),
             )
+            if uploaded is None:
+                self.log.warning("Failed to upload blob parent")
+                parent = None
+            else:
+                _, parent = uploaded
         elif isinstance(parent_payload, str):
             # Query parent object hash
             parent = self.mwdb.query(parent_payload, raise_not_found=False)
@@ -527,7 +587,6 @@ class MWDBReporter(Karton):
                 return
         
         object_type = task.headers["type"]
-        mwdb_object: Optional[MWDBObject]
 
         if object_type == "sample":
             self.process_sample(task)
@@ -537,3 +596,23 @@ class MWDBReporter(Karton):
             self.process_blob(task)
         else:
             raise RuntimeError("Unsupported object type")
+
+    @classmethod
+    def args_parser(cls) -> argparse.ArgumentParser:
+        parser = super().args_parser()
+        parser.add_argument(
+            "--report-unrecognized",
+            action="store_true",
+            default=None,
+            help="Upload files unrecognized by classifier (false by default)",
+        )
+        return parser
+
+    @classmethod
+    def config_from_args(cls, config: Config, args: argparse.Namespace) -> None:
+        super().config_from_args(config, args)
+        config.load_from_dict(
+            {
+                "mwdb-reporter": {"report_unrecognized": args.report_unrecognized},
+            }
+        )
