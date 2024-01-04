@@ -581,6 +581,11 @@ class MWDBReporter(Karton):
         )
 
     def process(self, task: Task) -> None:
+        if task.has_payload("properties"):
+            if task.get_payload("properties").get("volatile"):
+                self.log.info("Not reporting volatile task")
+                return
+        
         object_type = task.headers["type"]
 
         if object_type == "sample":
