@@ -42,7 +42,7 @@ class MWDBReporter(Karton):
         },
         "payload": {
             "config": config data
-            "executed_sample": Resource with **original**, executable malware sample contents
+            "executed_sample": optional, Resource with **original**, executable malware sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
                       or identifier (hash) of object
@@ -493,9 +493,7 @@ class MWDBReporter(Karton):
         sample_payload = task.get_payload("executed_sample")
         if isinstance(sample_payload, RemoteResource):
             # Upload original executed_sample file
-            uploaded = self._upload_file(
-                task, sample_payload
-            )
+            uploaded = self._upload_file(task, sample_payload)
             if uploaded:
                 _, sample = uploaded
             else:
