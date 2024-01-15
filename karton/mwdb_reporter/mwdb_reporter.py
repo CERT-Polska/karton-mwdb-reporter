@@ -42,7 +42,7 @@ class MWDBReporter(Karton):
         },
         "payload": {
             "config": config data
-            "sample": Resource with **original** sample contents
+            "executed_sample": Resource with **original**, executable malware sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
                       or identifier (hash) of object
@@ -488,13 +488,13 @@ class MWDBReporter(Karton):
                 "Found a 'store-in-gridfs' item inside a config from family: %s", family
             )
 
-        # Upload original sample
+        # Upload original executed sample
         sample: Optional[MWDBObject] = None
-        sample_payload = task.get_payload("sample")
+        sample_payload = task.get_payload("executed_sample")
         if isinstance(sample_payload, RemoteResource):
-            # Upload original sample file
+            # Upload original executed_sample file
             uploaded = self._upload_file(
-                task, task.get_payload("sample"), tags=["ripped:" + family]
+                task, sample_payload
             )
             if uploaded:
                 _, sample = uploaded
@@ -502,10 +502,8 @@ class MWDBReporter(Karton):
                 self.log.warning("Failed to upload sample for config")
 
         elif isinstance(sample_payload, str):
-            # Query original sample object hash
+            # Query original executed_sample object hash
             sample = self.mwdb.query_file(sample_payload, raise_not_found=False)
-            if sample:
-                self._add_tags(sample, ["ripped:" + family])
 
         # Upload dump that contains recognized config information
         parent: Optional[MWDBObject] = None
