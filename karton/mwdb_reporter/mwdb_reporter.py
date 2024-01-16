@@ -42,7 +42,7 @@ class MWDBReporter(Karton):
         },
         "payload": {
             "config": config data
-            "executed_sample": optional, Resource with **original**, executable malware sample contents
+            "executed_sample": optional, Resource with **original** executable malware sample contents
                       or identifier (hash) of object
             "parent": optional, Resource with **unpacked** sample/dump contents
                       or identifier (hash) of object
