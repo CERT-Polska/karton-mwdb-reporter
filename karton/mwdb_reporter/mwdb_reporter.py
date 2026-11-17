@@ -82,6 +82,7 @@ class MWDBReporter(Karton):
         {"type": "config"},
         {"type": "blob"},
     ]
+    egress_filters: List[dict] = []
 
     def _get_mwdb(self) -> MWDB:
         mwdb_config = self.config["mwdb"]
