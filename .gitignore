@@ -6,3 +6,5 @@ venv
 karton.ini
 build
 karton_mwdb_reporter.egg-info/
+build/
+*.egg-info
